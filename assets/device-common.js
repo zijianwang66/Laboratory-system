@@ -216,8 +216,8 @@
   }
   const overlap = (a,b,c,d) => a<d && b>c;
   function conflicts(device, start, end, excludeId='', source=records()) {
-    const a=new Date(start).getTime(), b=new Date(end).getTime();
-    if(!Number.isFinite(a)||!Number.isFinite(b)||b<=a)return [];
+    const a=new Date(start).getTime(), b=end===Infinity?Infinity:new Date(end).getTime();
+    if(!Number.isFinite(a)||(!Number.isFinite(b)&&b!==Infinity)||b<=a)return [];
     const found=[];
     for(const date of fixedBookings(device)) {
       const from=new Date(date+'T00:00').getTime(), to=new Date(date+'T00:00');to.setDate(to.getDate()+1);
@@ -233,10 +233,119 @@
     }
     return [...new Set(found)];
   }
-  function updateRecord(id, statuses, change) {
+  const AUDIT_FIELDS={status:'状态',startAt:'借用开始',endAt:'预计归还',rejectReason:'拒绝原因',reviewedAt:'审批时间',returnSubmittedAt:'归还提交时间',returnLocation:'归还位置',returnNormal:'设备是否正常',returnNote:'归还备注',returnPhotoName:'照片文件名',returnedAt:'验收时间',cancelledAt:'取消时间',cancelReason:'取消原因'};
+  const recordToken = r => JSON.stringify(r);
+  const revisionOf = r => Number.isSafeInteger(r.revision)&&r.revision>=0?r.revision:0;
+  const latestChange = r => Array.isArray(r.changeHistory)?r.changeHistory.at(-1):null;
+  const occupies = r => approved(r)||['待审批','待归还确认'].includes(r.status);
+  function appendHistory(record,before,meta={}) {
+    const changes=Object.keys(AUDIT_FIELDS).flatMap(field=>{
+      const oldValue=before?.[field]??null,newValue=record[field]??null;
+      return oldValue===newValue?[]:[{field,before:oldValue,after:newValue}];
+    });
+    if(!changes.length)return;
+    const action=meta.action||(record.status==='已拒绝'?'拒绝申请':before?.status==='待审批'&&approved(record)?'通过申请':record.status==='已归还'?'确认归还':record.status==='待归还确认'?'提交归还':'更新记录');
+    record.revision=revisionOf(before||record)+1;
+    record.changeHistory=[...(Array.isArray(before?.changeHistory)?before.changeHistory:[]),{
+      id:uid('CHANGE'),action,reason:meta.reason|| (action==='拒绝申请'?record.rejectReason:'') || '常规流程操作',
+      actor:meta.actor||(action==='提交归还'?'学生（本机原型）':'管理员（本机原型）'),
+      at:new Date().toISOString(),version:record.revision,changes,
+      ...(meta.undoOf?{undoOf:meta.undoOf}:{})
+    }];
+  }
+  function updateRecord(id, statuses, change, meta={}) {
     const list=records(), record=list.find(r=>r.id===id);
     if(!record || !statuses(record))throw new Error('记录状态已变化，请刷新后再操作。');
-    change(record);save(KEYS.records,list);return record;
+    if(meta.expectedToken&&recordToken(record)!==meta.expectedToken)throw new Error('这条记录已在其他页面发生变更。请取消编辑，重新打开后核对。');
+    const before=JSON.parse(JSON.stringify(record));
+    change(record);appendHistory(record,before,meta);save(KEYS.records,list);return record;
+  }
+  function correctionActions(r) {
+    const list=[];
+    if(r.status==='待审批'||approved(r))list.push(['period','调整使用期']);
+    if(approved(r)&&label(r)==='已预约')list.push(['revoke','撤回审批']);
+    if(r.status==='已拒绝')list.push(['reopen','重新打开申请']);
+    if(r.status==='待审批'||(approved(r)&&label(r)==='已预约'))list.push(['cancel','取消预约']);
+    if(r.status==='已归还')list.push(['undoReturn','撤销归还确认']);
+    const last=latestChange(r);
+    if(last&&last.version===revisionOf(r)&&!['提交申请','确认归还','撤销上次变更'].includes(last.action))list.push(['undoLast','撤销上次变更']);
+    return list;
+  }
+  function validateOccupiedRecord(candidate,source,devices) {
+    if(!occupies(candidate))return;
+    if(!validDate(candidate.startAt)||!validDate(candidate.endAt)||new Date(candidate.endAt)<=new Date(candidate.startAt))throw new Error('借用时段无效，请填写有效的起止时间。');
+    if(candidate.status==='待审批'&&new Date(candidate.endAt)<=new Date())throw new Error('原使用期已结束，请重新设置日期或重新申请。');
+    const end=candidate.status==='待归还确认'||overdue(candidate)?Infinity:candidate.endAt;
+    if(!(candidate.devices||[]).length)throw new Error('记录缺少仪器明细，无法恢复占用。');
+    for(const item of candidate.devices){
+      const device=devices.find(d=>d.id===item.id);
+      if(!device)throw new Error(`${item.name}已不在设备库，无法恢复占用。`);
+      if((candidate.status==='待审批'||label(candidate)==='已预约')&&(!openDevice(device)||!usable(device)))throw new Error(`${item.name}已暂停学生借用，请先核对设备状态。`);
+      const issues=conflicts(device,candidate.startAt,end,candidate.id,source);
+      if(issues.length)throw new Error(`${item.name}：${issues.join('；')}。未保存本次变更，请先协调排期。`);
+    }
+  }
+  function applyCorrection(original,action,values,source,devices) {
+    if(!correctionActions(original).some(([key])=>key===action))throw new Error('当前状态不支持这项操作，请重新核对记录。');
+    const reason=String(values.reason||'').trim();
+    if(!reason)throw new Error('请填写修改或纠正原因。');
+    const candidate=JSON.parse(JSON.stringify(original));
+    const checkPeriod=()=>{
+      if(!validDate(values.startAt)||!validDate(values.endAt)||new Date(values.endAt)<=new Date(values.startAt))throw new Error('预计归还时间应晚于借用开始时间。');
+      if(new Date(values.endAt)<=new Date())throw new Error('新的预计归还时间应晚于当前时间。');
+    };
+    if(action==='period'||action==='reopen'){
+      checkPeriod();
+      if(action==='period'&&label(original)==='使用中'){
+        if(new Date(values.startAt).getTime()!==new Date(original.startAt).getTime())throw new Error('使用中的记录只能调整预计归还时间，开始时间保留。');
+      }else{
+        if(new Date(values.startAt).getTime()<Date.now()-60000)throw new Error('新的借用开始时间已过去，请重新选择。');
+        candidate.startAt=values.startAt;
+      }
+      candidate.endAt=values.endAt;
+      if(action==='period'&&new Date(candidate.startAt).getTime()===new Date(original.startAt).getTime()&&new Date(candidate.endAt).getTime()===new Date(original.endAt).getTime())throw new Error('日期未发生变化，无需保存。');
+      if(!candidate.originalPeriod)candidate.originalPeriod={startAt:original.startAt,endAt:original.endAt};
+      if(action==='reopen'){candidate.status='待审批';delete candidate.rejectReason;delete candidate.reviewedAt;}
+    }
+    if(action==='revoke'){candidate.status='待审批';delete candidate.reviewedAt;delete candidate.rejectReason;}
+    if(action==='cancel'){candidate.status='已取消';candidate.cancelledAt=stamp();candidate.cancelReason=reason;}
+    if(action==='undoReturn'){candidate.status='待归还确认';delete candidate.returnedAt;}
+    if(action==='undoLast'){
+      const entry=latestChange(original);
+      if(values.undoOf!==entry?.id||entry.version!==revisionOf(original))throw new Error('后续操作已发生变化，不能撤销旧操作。');
+      if(entry.action==='通过申请'&&label(original)==='使用中')throw new Error('预约已经进入使用期，不能直接撤回审批。');
+      if(entry.action==='取消预约'&&new Date(original.startAt)<=new Date())throw new Error('原预约开始时间已过去，请重新申请。');
+      for(const change of entry.changes){
+        if(!Object.hasOwn(AUDIT_FIELDS,change.field))continue;
+        if((original[change.field]??null)!==change.after)throw new Error('记录内容已发生变化，不能恢复旧版本。');
+        if(change.before===null)delete candidate[change.field];else candidate[change.field]=change.before;
+      }
+      if(label(original)==='使用中'&&new Date(candidate.startAt).getTime()!==new Date(original.startAt).getTime())throw new Error('预约已进入使用期，不能通过撤销改写开始时间。');
+    }
+    // Reversals preserve uploads and history; only this record's changed business fields are restored.
+    validateOccupiedRecord(candidate,source,devices);
+    return candidate;
+  }
+  function auditValue(field,value){if(value==null||value==='')return '未设置';if(['startAt','endAt'].includes(field))return time(value);return String(value);}
+  function changeHistoryHtml(r) {
+    const history=Array.isArray(r.changeHistory)?r.changeHistory:[];
+    if(!history.length)return '';
+    return `<details class="change-history"><summary>变更记录（${history.length}）</summary><ol>${[...history].reverse().map(entry=>`<li><strong>${esc(entry.action)}</strong><div class="meta">${esc(time(entry.at))} · ${esc(entry.actor||'本机原型操作')}</div><p>原因：${esc(entry.reason||'未填写')}</p>${(entry.changes||[]).filter(c=>Object.hasOwn(AUDIT_FIELDS,c.field)).map(c=>`<div class="meta">${esc(AUDIT_FIELDS[c.field])}：${esc(auditValue(c.field,c.before))} → ${esc(auditValue(c.field,c.after))}</div>`).join('')}</li>`).join('')}</ol></details>`;
+  }
+  function filterBorrowRecords(list,filter={}) {
+    const keyword=String(filter.keyword||'').trim().toLowerCase();
+    const from=filter.from?new Date(filter.from+'T00:00').getTime():-Infinity;
+    let to=Infinity;
+    if(filter.to){const date=new Date(filter.to+'T00:00');date.setDate(date.getDate()+1);to=date.getTime();}
+    if(Number.isNaN(from)||Number.isNaN(to)||to<=from)throw new Error('筛选结束日期不能早于开始日期。');
+    return list.filter(r=>{
+      if(filter.status&&filter.status!=='ALL'&&label(r)!==filter.status)return false;
+      if(filter.device&&(r.devices||[]).every(d=>d.id!==filter.device))return false;
+      if(filter.overdue&&!overdue(r))return false;
+      if(keyword&&!`${r.id} ${r.borrower} ${deviceText(r)} ${r.place} ${r.group}`.toLowerCase().includes(keyword))return false;
+      if(filter.from||filter.to){if(!validDate(r.startAt)||!validDate(r.endAt))return false;return overlap(new Date(r.startAt).getTime(),new Date(r.endAt).getTime(),from,to);}
+      return true;
+    });
   }
   function recordActions(r) {
     const state=label(r), actions=[];
@@ -247,7 +356,7 @@
     return actions.join('');
   }
   function recordRow(r, actions=true) {
-    return `<article class="list-row"><div class="row-main"><div class="row-title"><h3>${esc(deviceText(r))}</h3>${recordBadge(r)}</div><div class="meta">${esc(period(r))} · ${esc(r.place||'未填写地点')}</div><div class="meta">${esc(r.borrower||'未登记借用人')} · 申请编号 ${esc(r.id)}</div>${r.rejectReason?`<p class="row-desc">未通过原因：${esc(r.rejectReason)}</p>`:''}${r.returnSubmittedAt?`<p class="row-desc">归还提交：${esc(r.returnSubmittedAt)} · ${esc(r.returnLocation||'原位置')}${r.returnNormal==='否'?' · 已报告异常':''}</p>`:''}${r.returnedAt?`<div class="meta">验收完成：${esc(r.returnedAt)}</div>`:''}</div>${actions?`<div class="row-actions">${recordActions(r)}</div>`:''}</article>`;
+    return `<article class="list-row"><div class="row-main"><div class="row-title"><h3>${esc(deviceText(r))}</h3>${recordBadge(r)}</div><div class="meta">${esc(period(r))} · ${esc(r.place||'未填写地点')}</div><div class="meta">${esc(r.borrower||'未登记借用人')} · 申请编号 ${esc(r.id)}</div>${r.rejectReason?`<p class="row-desc">未通过原因：${esc(r.rejectReason)}</p>`:''}${r.returnSubmittedAt?`<p class="row-desc">归还提交：${esc(r.returnSubmittedAt)} · ${esc(r.returnLocation||'原位置')}${r.returnNormal==='否'?' · 已报告异常':''}</p>`:''}${r.returnedAt?`<div class="meta">验收完成：${esc(r.returnedAt)}</div>`:''}${r.cancelReason?`<p class="row-desc">取消原因：${esc(r.cancelReason)}</p>`:''}${changeHistoryHtml(r)}</div>${actions?`<div class="row-actions">${recordActions(r)}</div>`:''}</article>`;
   }
   function header(page) {
     const links=[['home','仪器首页'],['borrow','借用仪器'],['returns','归还仪器'],['data','上传数据']];
@@ -307,7 +416,7 @@
     listen(form,'click',e=>{const b=e.target.closest('[data-duration]');if(!b)return;let start=$('#startAt').value?new Date($('#startAt').value):new Date();start.setSeconds(0,0);if(!$('#startAt').value){start.setMinutes(Math.ceil(start.getMinutes()/30)*30);$('#startAt').value=localInput(start);}$('#endAt').value=localInput(new Date(start.getTime()+Number(b.dataset.duration)*3600000));availability();});
     listen('#clearProfile','click',()=>{if(!window.confirm('清除这台浏览器记住的姓名、联系方式和课题组？历史借用记录会保留。'))return;localStorage.removeItem(KEYS.profile);for(const key of ['borrower','contact','group'])form.elements[key].value='';$('#rememberProfile').checked=false;$('#profileDetails').open=true;msg('#formMessage','已清除本机常用资料，历史借用记录保留。');});
     form.addEventListener('invalid',e=>{if(e.target.closest('#profileDetails'))$('#profileDetails').open=true;},true);
-    listen(form,'submit',e=>{e.preventDefault();msg('#formMessage','');const data=new FormData(form),chosen=selected();const start=String(data.get('startAt')),end=String(data.get('endAt'));if(!chosen.length){msg('#formMessage','请先选择至少一台仪器。',true);return;}if(chosen.length!==selectedIds.size||chosen.some(d=>!openDevice(d)||!usable(d)))throw new Error('部分仪器已暂停借用，请重新选择。');if(!validDate(start)||!validDate(end)||new Date(end)<=new Date(start)){msg('#formMessage','预计归还时间应晚于借用开始时间。',true);return;}if(new Date(start).getTime()<Date.now()-60000){msg('#formMessage','借用开始时间已过去，请重新选择时间。',true);return;}const issues=chosen.flatMap(d=>conflicts(d,start,end).map(reason=>`${d.name}：${reason}`));if(issues.length){msg('#formMessage',issues.join('；')+'。请调整时间或移除冲突仪器。',true);return;}const fields=Object.fromEntries(['borrower','contact','group','place','purpose'].map(k=>[k,String(data.get(k)||'').trim()]));if(!fields.borrower||!fields.contact||!fields.place||!fields.purpose){msg('#formMessage','姓名、联系方式、地点和用途不能为空。',true);$('#profileDetails').open=true;return;}const record={id:uid('STU'),...fields,leaveLab:'学生端待确认',startAt:start,endAt:end,status:'待审批',createdAt:stamp(),devices:chosen.map(d=>({id:d.id,name:d.name,model:d.model,location:d.location,category:d.category,domain:d.category}))};if($('#rememberProfile').checked)save(KEYS.profile,{borrower:fields.borrower,contact:fields.contact,group:fields.group});else localStorage.removeItem(KEYS.profile);const all=records();all.unshift(record);save(KEYS.records,all);selectedIds.clear();form.reset();for(const key of ['borrower','contact','group'])form.elements[key].value=fields[key];$('#rememberProfile').checked=!!localStorage.getItem(KEYS.profile);renderSelected();renderDevices();availability();msg('#formMessage',`申请已提交，等待管理员审批。申请编号：${record.id}`);$('#formMessage').insertAdjacentHTML('beforeend',` <a href="${PAGES.status}">查看我的借用</a>`);clean();});
+    listen(form,'submit',e=>{e.preventDefault();msg('#formMessage','');const data=new FormData(form),chosen=selected();const start=String(data.get('startAt')),end=String(data.get('endAt'));if(!chosen.length){msg('#formMessage','请先选择至少一台仪器。',true);return;}if(chosen.length!==selectedIds.size||chosen.some(d=>!openDevice(d)||!usable(d)))throw new Error('部分仪器已暂停借用，请重新选择。');if(!validDate(start)||!validDate(end)||new Date(end)<=new Date(start)){msg('#formMessage','预计归还时间应晚于借用开始时间。',true);return;}if(new Date(start).getTime()<Date.now()-60000){msg('#formMessage','借用开始时间已过去，请重新选择时间。',true);return;}const issues=chosen.flatMap(d=>conflicts(d,start,end).map(reason=>`${d.name}：${reason}`));if(issues.length){msg('#formMessage',issues.join('；')+'。请调整时间或移除冲突仪器。',true);return;}const fields=Object.fromEntries(['borrower','contact','group','place','purpose'].map(k=>[k,String(data.get(k)||'').trim()]));if(!fields.borrower||!fields.contact||!fields.place||!fields.purpose){msg('#formMessage','姓名、联系方式、地点和用途不能为空。',true);$('#profileDetails').open=true;return;}const record={id:uid('STU'),...fields,leaveLab:'学生端待确认',startAt:start,endAt:end,status:'待审批',createdAt:stamp(),devices:chosen.map(d=>({id:d.id,name:d.name,model:d.model,location:d.location,category:d.category,domain:d.category}))};appendHistory(record,null,{action:'提交申请',actor:'学生（本机原型）',reason:'提交借用申请'});if($('#rememberProfile').checked)save(KEYS.profile,{borrower:fields.borrower,contact:fields.contact,group:fields.group});else localStorage.removeItem(KEYS.profile);const all=records();all.unshift(record);save(KEYS.records,all);selectedIds.clear();form.reset();for(const key of ['borrower','contact','group'])form.elements[key].value=fields[key];$('#rememberProfile').checked=!!localStorage.getItem(KEYS.profile);renderSelected();renderDevices();availability();msg('#formMessage',`申请已提交，等待管理员审批。申请编号：${record.id}`);$('#formMessage').insertAdjacentHTML('beforeend',` <a href="${PAGES.status}">查看我的借用</a>`);clean();});
     renderSelected();renderDevices();availability();return ()=>{renderSelected();renderDevices();availability();};
   }
   function returns() {
@@ -344,28 +453,112 @@
     let editingId='';const views={todo:'待办',devices:'设备管理',requests:'借用记录',data:'数据资料'};
     const view=Object.hasOwn(views,params.get('view'))?params.get('view'):'todo';
     $('#app').innerHTML=head('仪器管理','先处理审批与归还，再维护设备和查阅资料。',`<a href="${PAGES.home}">学生端首页</a>`)+`<nav class="view-nav" aria-label="后台模块">${Object.entries(views).map(([key,name])=>`<a href="${route('admin',{view:key})}" ${view===key?'aria-current="page"':''}>${name}<span id="count-${key}"></span></a>`).join('')}</nav><div id="adminContent"></div>`;
+
+    let activeRecordEditor=null;
+    let requestQuick=params.get('quick')||'';
+    let requestDeviceInitialized=false;
+    const correctionTitles={period:'调整使用期',revoke:'撤回审批',reopen:'重新打开申请',cancel:'取消预约',undoReturn:'撤销归还确认',undoLast:'撤销上次变更',reject:'拒绝申请'};
+    const correctionSubmits={period:'保存日期',revoke:'确认撤回',reopen:'恢复待审批',cancel:'确认取消预约',undoReturn:'恢复待验收',undoLast:'确认撤销变更',reject:'确认拒绝'};
+    function moreActions(r){const list=correctionActions(r);return list.length?`<details class="record-more"><summary>更多操作</summary><div class="more-actions">${list.map(([action,title])=>`<button class="quiet" type="button" data-record-action="${action}" data-record-id="${esc(r.id)}">${title}</button>`).join('')}</div></details>`:'';}
+    function editorControls(disabled){
+      $$('#adminContent [data-approve],#adminContent [data-reject],#adminContent [data-confirm],#adminContent [data-record-action],#requestFilters input,#requestFilters select,#requestFilters button,#downloadRequests').forEach(el=>{el.disabled=disabled;});
+    }
+    function closeRecordEditor(redraw=true){if(!activeRecordEditor)return;activeRecordEditor.clean();activeRecordEditor.form.remove();activeRecordEditor=null;editorControls(false);if(redraw)refresh();}
+    function openRecordEditor(action,id){
+      if(activeRecordEditor)return;
+      const record=records().find(r=>r.id===id);
+      if(!record||(action==='reject'?record.status!=='待审批':!correctionActions(record).some(([key])=>key===action)))throw new Error('记录状态已变化，请刷新后重新操作。');
+      const row=$$('[data-row-id]').find(el=>el.dataset.rowId===id);
+      if(!row)return;
+      const menu=$('.record-more',row);if(menu)menu.open=false;
+      const needsDates=action==='period'||action==='reopen';
+      const lockedStart=action==='period'&&label(record)==='使用中';
+      const last=latestChange(record);
+      const explanation={period:lockedStart?'使用中的仪器保留原开始时间。保存前会检查新的预计归还时间是否与其他预约冲突。':'调整后会重新检查所有仪器的排期，原日期保留在变更记录中。',revoke:'仅适用于尚未开始的预约。撤回后恢复待审批，原审批保留在变更记录中。',reopen:'恢复为待审批，可同时修正新的借用日期。仍需再次审批。',cancel:'取消后释放预约排期，保留申请及取消原因。',undoReturn:'恢复为待归还验收，并恢复设备占用。后续已有冲突预约时不能直接恢复。',undoLast:last?`仅撤销最近一次“${last.action}”，保留所有变更历史和数据登记。`:'',reject:'原因会显示给学生，方便修改后重新申请。'};
+      row.insertAdjacentHTML('beforeend',`<form class="record-editor" data-record-form="${action}"><h3 tabindex="-1">${correctionTitles[action]}</h3><p class="help">${esc(explanation[action])}</p>${needsDates?`<div class="form-grid"><div><label for="editStartAt">借用开始时间</label><input id="editStartAt" name="startAt" type="datetime-local" value="${esc(localInput(record.startAt))}" required ${lockedStart?'readonly':''}></div><div><label for="editEndAt">预计归还时间</label><input id="editEndAt" name="endAt" type="datetime-local" value="${esc(localInput(record.endAt))}" required></div></div>`:''}<label for="recordChangeReason">${action==='reject'?'拒绝原因':'修改／纠正原因'}</label><textarea id="recordChangeReason" name="reason" required maxlength="1000" placeholder="说明原因，方便学生和管理员核对…"></textarea><div class="actions"><button type="submit">${correctionSubmits[action]}</button><button type="button" class="secondary" data-close-record-editor>取消修改</button></div><div class="message" id="recordEditMessage" role="status" aria-live="polite"></div></form>`);
+      const form=$('[data-record-form]',row);
+      activeRecordEditor={form,id,action,token:recordToken(record),original:record,undoOf:last?.id,clean:guardDirty(form)};
+      editorControls(true);$('h3',form).focus({preventScroll:true});form.scrollIntoView({block:'nearest'});
+      if(action==='reject')form.elements.reason.focus();
+    }
+    function saveRecordEditor(form){
+      const editor=activeRecordEditor;
+      if(!editor||editor.form!==form)return;
+      const reason=form.elements.reason.value.trim();
+      if(!reason){msg('#recordEditMessage','请填写修改或纠正原因。',true);return;}
+      const values={reason,undoOf:editor.undoOf};
+      for(const key of ['startAt','endAt'])if(form.elements[key])values[key]=form.elements[key].value===localInput(editor.original[key])?editor.original[key]:form.elements[key].value;
+      try{
+        updateRecord(editor.id,r=>editor.action==='reject'?r.status==='待审批':true,r=>{
+          if(editor.action==='reject'){r.status='已拒绝';r.rejectReason=reason;r.reviewedAt=stamp();return;}
+          const candidate=applyCorrection(r,editor.action,values,records(),inventory());
+          for(const field of Object.keys(AUDIT_FIELDS))if(!Object.hasOwn(candidate,field))delete r[field];
+          Object.assign(r,candidate);
+        },{expectedToken:editor.token,action:correctionTitles[editor.action],reason,...(editor.action==='undoLast'?{undoOf:editor.undoOf}:{})});
+        const title=correctionTitles[editor.action];closeRecordEditor(false);refresh();msg('#pageMessage',`${title}已保存，学生端与排期已更新。`);
+      }catch(error){msg('#recordEditMessage',error.message,true);}
+    }
+    function requestSelection(){return filterBorrowRecords(records(),{keyword:$('#requestSearch').value,status:$('#requestStatus').value,device:$('#requestDevice').value,from:$('#requestFrom').value,to:$('#requestTo').value,overdue:requestQuick==='overdue'});}
     function totals(){const list=records();$('#count-todo').textContent=` (${list.filter(r=>['待审批','待归还确认'].includes(r.status)).length})`;}
     function actions(r){if(r.status==='待审批')return `<button type="button" data-approve="${esc(r.id)}">通过申请</button><button type="button" class="secondary" data-reject="${esc(r.id)}">拒绝</button>`;if(r.status==='待归还确认')return `<button type="button" data-confirm="${esc(r.id)}">确认归还</button>`;return '';}
-    function adminRow(r){return `<article class="list-row" data-row-id="${esc(r.id)}"><div class="row-main"><div class="row-title"><h3>${esc(deviceText(r))}</h3>${recordBadge(r)}</div><div class="meta">${esc(r.borrower)} · ${esc(r.contact)} · ${esc(period(r))}</div><div class="meta">使用地点 ${esc(r.place||'未填写')} · ${esc(r.group||'未填写课题组')}</div><p class="row-desc">用途：${esc(r.purpose||'未填写')}</p>${r.status==='待归还确认'||r.status==='已归还'?`<div class="notice">归还位置：${esc(r.returnLocation||'未填写')}<br>设备状态：${r.returnNormal==='否'?'有异常':'正常'}${r.returnNote?`<br>备注：${esc(r.returnNote)}`:''}<br>照片登记：${esc(r.returnPhotoName||'未登记')}<br>提交：${esc(r.returnSubmittedAt||'未登记')}</div>`:''}${r.rejectReason?`<p class="row-desc">拒绝原因：${esc(r.rejectReason)}</p>`:''}<details><summary>完整记录</summary><p>编号：${esc(r.id)}<br>提交：${esc(r.createdAt)}${r.reviewedAt?`<br>审批：${esc(r.reviewedAt)}`:''}${r.returnedAt?`<br>归还确认：${esc(r.returnedAt)}`:''}<br>仪器明细：${esc((r.devices||[]).map(d=>`${d.name}（${d.id}）`).join('、'))}</p></details></div><div class="row-actions">${actions(r)}</div></article>`;}
+    function adminRow(r){return `<article class="list-row" data-row-id="${esc(r.id)}"><div class="row-main"><div class="row-title"><h3>${esc(deviceText(r))}</h3>${recordBadge(r)}</div><div class="meta">${esc(r.borrower)} · ${esc(r.contact)} · ${esc(period(r))}</div><div class="meta">使用地点 ${esc(r.place||'未填写')} · ${esc(r.group||'未填写课题组')}</div><p class="row-desc">用途：${esc(r.purpose||'未填写')}</p>${r.status==='待归还确认'||r.status==='已归还'?`<div class="notice">归还位置：${esc(r.returnLocation||'未填写')}<br>设备状态：${r.returnNormal==='否'?'有异常':'正常'}${r.returnNote?`<br>备注：${esc(r.returnNote)}`:''}<br>照片登记：${esc(r.returnPhotoName||'未登记')}<br>提交：${esc(r.returnSubmittedAt||'未登记')}</div>`:''}${r.rejectReason?`<p class="row-desc">拒绝原因：${esc(r.rejectReason)}</p>`:''}${r.cancelReason?`<p class="row-desc">取消原因：${esc(r.cancelReason)}</p>`:''}${r.originalPeriod?`<div class="meta">最初申请：${esc(period(r.originalPeriod))}</div>`:''}${changeHistoryHtml(r)}<details><summary>完整记录</summary><p>编号：${esc(r.id)}<br>提交：${esc(r.createdAt)}${r.reviewedAt?`<br>审批：${esc(r.reviewedAt)}`:''}${r.returnedAt?`<br>归还确认：${esc(r.returnedAt)}`:''}<br>仪器明细：${esc((r.devices||[]).map(d=>`${d.name}（${d.id}）`).join('、'))}</p></details></div><div class="row-actions">${actions(r)}${moreActions(r)}</div></article>`;}
     function todoDraw(){const list=records(),pending=list.filter(r=>r.status==='待审批'),waiting=list.filter(r=>r.status==='待归还确认'),late=list.filter(overdue);$('#pendingList').innerHTML=pending.length?pending.map(adminRow).join(''):empty('所有申请均已处理。');$('#returnList').innerHTML=waiting.length?waiting.map(adminRow).join(''):empty('暂无待验收的归还登记。');$('#overdueList').innerHTML=late.length?late.map(adminRow).join(''):empty('暂无超期未归还的记录。');totals();}
-    function requestDraw(){const text=$('#requestSearch').value.trim().toLowerCase(),filter=$('#requestStatus').value;const list=records().filter(r=>(filter==='ALL'||label(r)===filter)&&`${r.id} ${r.borrower} ${deviceText(r)} ${r.place} ${r.group}`.toLowerCase().includes(text));$('#requestList').innerHTML=list.length?list.map(adminRow).join(''):empty('暂无符合筛选条件的借用记录。');totals();}
+
+    function requestDraw(){
+      const select=$('#requestDevice'),previous=requestDeviceInitialized?select.value:params.get('device')||'';
+      requestDeviceInitialized=true;
+      const names=new Map(inventory().map(d=>[d.id,d.name]));for(const r of records())for(const d of r.devices||[])if(!names.has(d.id))names.set(d.id,d.name);
+      select.innerHTML='<option value="">全部仪器</option>'+[...names].map(([id,name])=>`<option value="${esc(id)}">${esc(name)}（${esc(id)}）</option>`).join('');select.value=previous;
+      try{const list=requestSelection();$('#requestList').innerHTML=list.length?list.map(adminRow).join(''):empty('暂无符合筛选条件的借用记录。');$('#requestCount').textContent=`${list.length} 条`;msg('#requestFilterMessage','');}
+      catch(error){$('#requestList').innerHTML=empty('请先修正筛选日期。');$('#requestCount').textContent='';msg('#requestFilterMessage',error.message,true);}
+      $$('[data-request-quick]').forEach(b=>b.setAttribute('aria-pressed',String((b.dataset.requestQuick||'')===requestQuick)));
+      totals();
+    }
+
     const field=(id,name,labelText,value='',type='text',required=false)=>`<div><label for="${id}">${labelText}</label><input id="${id}" name="${name}" type="${type}" value="${esc(value)}" ${required?'required':''} autocomplete="off" maxlength="300"></div>`;
     let cleanDevice=()=>{};
     function showDeviceForm(d=null){editingId=d?.id||'';$('#deviceEditor').hidden=false;$('#deviceEditor').innerHTML=`<form id="deviceForm" class="panel admin-form"><h2 id="deviceFormTitle" tabindex="-1">${d?'编辑设备':'新增设备'}</h2><div class="form-grid">${field('deviceId','id','仪器编号',d?.id||'','text',true)}${field('deviceName','name','仪器名称',d?.name||'','text',true)}${field('deviceModel','model','型号',d?.model||'')}<div><label for="deviceCategory">仪器分类</label><select id="deviceCategory" name="category">${CATEGORIES.map(c=>`<option ${c===d?.category?'selected':''}>${c}</option>`).join('')}</select></div>${field('deviceLocation','location','存放位置',d?.location||'')}${field('ownerTeacher','ownerTeacher','归属老师',d?.ownerTeacher||'未分配')}${field('purchaseYear','purchaseYear','购买年份／年限',d?.purchaseYear||'')}<div><label for="deviceStatus">借用状态</label><select id="deviceStatus" name="status">${['可预订','需确认','维护中','暂不可借'].map(s=>`<option ${s===d?.status?'selected':''}>${s}</option>`).join('')}</select></div><div><label for="purposeTag">用途标签</label><select id="purposeTag" name="purposeTag">${['风','光','热','雨','电','其他'].map(t=>`<option ${t===d?.purposeTag?'selected':''}>${t}</option>`).join('')}</select></div><label class="check"><input id="openToStudent" name="openToStudent" type="checkbox" ${d?.openToStudent!==false?'checked':''}>开放学生端借用</label><div class="full"><label for="deviceUsage">用途说明</label><textarea id="deviceUsage" name="usage" maxlength="2000">${esc(d?.usage||'')}</textarea></div><details class="full"><summary>场景与注意事项（选填）</summary><label for="deviceScenarios">适用场景</label><textarea id="deviceScenarios" name="scenarios" maxlength="2000">${esc(d?.scenarios||'')}</textarea><label for="deviceNotes">注意事项</label><textarea id="deviceNotes" name="notes" maxlength="2000">${esc(d?.notes||'')}</textarea></details></div><p class="help">计算显示及其他类设备仍由管理员线下管理。</p><div class="actions"><button type="submit">保存设备</button><button class="secondary" id="cancelEdit" type="button">取消编辑</button></div></form>`;if(d)$('#deviceId').readOnly=true;cleanDevice=guardDirty($('#deviceForm'));$('#deviceFormTitle').focus();listen('#cancelEdit','click',()=>{cleanDevice();$('#deviceEditor').hidden=true;$('#addDevice').focus();});listen('#deviceForm','submit',e=>{e.preventDefault();const form=e.currentTarget,data=new FormData(form),list=inventory(),id=String(data.get('id')).trim(),name=String(data.get('name')).trim();if(!id||!name)throw new Error('请填写仪器编号和名称。');if(!editingId&&list.some(x=>x.id===id))throw new Error('仪器编号已存在，请使用不同编号。');const original=list.find(x=>x.id===editingId);if(editingId&&!original)throw new Error('设备已发生变化，请刷新后重新编辑。');const values=Object.fromEntries(['id','name','model','category','location','ownerTeacher','purchaseYear','purposeTag','status','usage','scenarios','notes'].map(k=>[k,String(data.get(k)||'').trim()]));const typeMap={'风':'wind','光':'light','热':'heat','雨':'rain','电':'electric','其他':'electric'};const device=normalizeDevice({...original,...values,type:original?.type||typeMap[values.purposeTag],openToStudent:form.elements.openToStudent.checked,booked:original?.booked||[]});save(KEYS.devices,editingId?list.map(x=>x.id===editingId?device:x):[device,...list]);cleanDevice();$('#deviceEditor').hidden=true;deviceDraw();msg('#pageMessage','设备已保存，学生端会读取更新后的设备资料。');$('#addDevice').focus();});}
     function deviceDraw(){const all=inventory(),text=$('#deviceSearch').value.trim().toLowerCase();const list=all.filter(d=>(!$('#deviceOpen').value||String(openDevice(d))===$('#deviceOpen').value)&&(!$('#teacherFilter').value||(d.ownerTeacher||'未分配')===$('#teacherFilter').value)&&(!$('#yearFilter').value||(d.purchaseYear||'未登记')===$('#yearFilter').value)&&(!$('#purposeFilter').value||(d.purposeTag||'其他')===$('#purposeFilter').value)&&`${d.id} ${d.name} ${d.model} ${d.category} ${d.location}`.toLowerCase().includes(text));$('#deviceCount').textContent=`${list.length} / ${all.length} 台`;$('#deviceList').innerHTML=list.length?list.map(d=>`<article class="list-row"><div class="row-main"><div class="row-title"><h3>${esc(d.name)}</h3>${badge(d.status)}${!openDevice(d)?badge('学生端隐藏'):''}</div><div class="meta">${esc(d.id)} · ${esc(d.model)} · ${esc(d.category)}</div><div class="meta">${esc(d.location)} · ${esc(d.ownerTeacher||'未分配')} · ${esc(d.purchaseYear||'未登记')}</div><p class="row-desc">${esc(d.usage)}</p></div><div class="row-actions"><button class="secondary" type="button" data-edit="${esc(d.id)}">编辑</button><button class="quiet" type="button" data-toggle="${esc(d.id)}">${d.openToStudent?'隐藏':'开放'}</button></div></article>`).join(''):empty('暂无符合筛选条件的设备。');for(const [id,prop,fallback] of [['teacherFilter','ownerTeacher','未分配'],['yearFilter','purchaseYear','未登记'],['purposeFilter','purposeTag','其他']]){const el=$('#'+id),value=el.value;el.innerHTML=`<option value="">全部${id==='teacherFilter'?'老师':id==='yearFilter'?'年限':'用途'}</option>`+[...new Set(all.map(d=>d[prop]||fallback))].map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');el.value=value;}}
     function dataDraw(){const keyword=$('#uploadSearch').value.trim().toLowerCase(),device=$('#uploadDevice').value,start=$('#uploadStart').value,end=$('#uploadEnd').value;const all=uploads(),borrowList=records();const filtered=all.filter(u=>{const owner=borrowList.find(r=>r.id===u.recordId);return (!device||u.deviceName===device)&&`${u.id} ${u.recordId} ${u.fileName} ${owner?.borrower||''} ${owner?.group||''}`.toLowerCase().includes(keyword)&&(!start||new Date(u.dataEnd)>=new Date(start+'T00:00'))&&(!end||new Date(u.dataStart)<new Date(new Date(end+'T00:00').getTime()+86400000));});$('#uploadList').innerHTML=filtered.length?`<div class="data-table" role="region" aria-label="原始数据登记表" tabindex="0"><table><thead><tr>${['仪器／学生','文件','采集时间段','关联借用','登记时间／备注'].map(x=>`<th scope="col">${x}</th>`).join('')}</tr></thead><tbody>${filtered.map(u=>`<tr><td>${esc(u.deviceName)}<br>${esc(borrowList.find(r=>r.id===u.recordId)?.borrower||'未登记')}</td><td>${esc(u.fileName)}<br>${esc(u.fileSize)}</td><td>${esc(time(u.dataStart))}<br>至 ${esc(time(u.dataEnd))}</td><td>${esc(u.recordId)}<br>${esc(u.id)}</td><td>${esc(u.createdAt)}<br>${esc(u.note||'')}</td></tr>`).join('')}</tbody></table></div>`:empty('暂无符合筛选条件的数据登记。');const previous=$('#uploadDevice').value;$('#uploadDevice').innerHTML='<option value="">全部仪器</option>'+[...new Set(all.map(u=>u.deviceName))].map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');$('#uploadDevice').value=previous;}
     if(view==='todo'){$('#adminContent').innerHTML=`<section><div class="section-head"><h2>待审批申请</h2><a href="${route('admin',{view:'requests'})}">全部借用记录</a></div><div id="pendingList" class="list"></div></section><section class="section"><h2>待归还验收</h2><div id="returnList" class="list"></div></section><section class="section"><details><summary>超期未归还</summary><div id="overdueList" class="list"></div></details></section>`;todoDraw();}
-    if(view==='requests'){$('#adminContent').innerHTML=`<div class="toolbar"><div class="grow"><label for="requestSearch">搜索借用记录</label><input id="requestSearch" name="requestSearch" type="search" placeholder="学生、仪器、地点或申请编号…" autocomplete="off"></div><div><label for="requestStatus">状态</label><select id="requestStatus" name="requestStatus">${['ALL','待审批','已预约','使用中','待归还确认','已归还','已拒绝'].map(s=>`<option value="${s}">${s==='ALL'?'全部状态':s}</option>`).join('')}</select></div><button class="secondary" id="downloadRequests" type="button">下载汇总表</button></div><div id="requestList" class="list"></div>`;listen('#requestSearch','input',requestDraw);listen('#requestStatus','change',requestDraw);listen('#downloadRequests','click',()=>{const cell=v=>{let text=String(v??'');if(/^[=+@\-\t\r]/.test(text))text="'"+text;return '"'+text.replaceAll('"','""')+'"';};const lines=[['申请编号','状态','借用人','联系方式','课题组','地点','开始时间','预计归还','仪器','用途','拒绝原因','审批时间'],...records().map(r=>[r.id,label(r),r.borrower,r.contact,r.group,r.place,r.startAt,r.endAt,deviceText(r),r.purpose,r.rejectReason,r.reviewedAt])];const blob=new Blob(['\ufeff'+lines.map(row=>row.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`借用登记汇总-${dayKey(new Date())}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});requestDraw();}
+
+    if(view==='requests'){
+      $('#adminContent').innerHTML=`<div id="requestFilters"><div class="toolbar"><div class="grow"><label for="requestSearch">搜索借用记录</label><input id="requestSearch" name="requestSearch" type="search" value="${esc(params.get('q')||'')}" placeholder="学生、仪器、地点或申请编号…" autocomplete="off"></div><div><label for="requestStatus">状态</label><select id="requestStatus" name="requestStatus">${['ALL','待审批','已预约','使用中','待归还确认','已归还','已拒绝','已取消'].map(s=>`<option value="${s}" ${params.get('status')===s?'selected':''}>${s==='ALL'?'全部状态':s}</option>`).join('')}</select></div></div><div class="toolbar"><div class="field"><label for="requestDevice">仪器</label><select id="requestDevice" name="requestDevice"></select></div><div class="field"><label for="requestFrom">借用时段：开始日期</label><input id="requestFrom" name="requestFrom" type="date" value="${esc(params.get('from')||'')}"></div><div class="field"><label for="requestTo">借用时段：结束日期</label><input id="requestTo" name="requestTo" type="date" value="${esc(params.get('to')||'')}"></div></div><div class="chips" role="group" aria-label="借用日期快捷筛选"><button type="button" class="filter" data-request-quick="">全部日期</button><button type="button" class="filter" data-request-quick="today">今天</button><button type="button" class="filter" data-request-quick="week">未来一周</button><button type="button" class="filter" data-request-quick="overdue">已超期</button></div></div><p class="help">按借用时段与日期范围的重叠部分筛选；导出当前筛选结果。修改记录时请先保存或取消，再继续筛选。</p><div id="requestFilterMessage" class="message" role="status" aria-live="polite"></div><div class="section-head"><h2>借用记录 <span id="requestCount" class="meta" aria-live="polite"></span></h2><button class="secondary" id="downloadRequests" type="button">下载汇总表</button></div><div id="requestList" class="list"></div>`;
+      const syncFilters=()=>{setQuery('q',$('#requestSearch').value);setQuery('status',$('#requestStatus').value);setQuery('device',$('#requestDevice').value);setQuery('from',$('#requestFrom').value);setQuery('to',$('#requestTo').value);setQuery('quick',requestQuick);};
+      listen('#requestSearch','input',()=>{syncFilters();requestDraw();});
+      for(const id of ['requestStatus','requestDevice','requestFrom','requestTo'])listen('#'+id,'change',()=>{if(id!=='requestDevice')requestQuick='';syncFilters();requestDraw();});
+      listen('#requestFilters','click',e=>{const button=e.target.closest('[data-request-quick]');if(!button)return;requestQuick=button.dataset.requestQuick;const today=new Date(),end=new Date(today);$('#requestFrom').value='';$('#requestTo').value='';if(requestQuick==='today'||requestQuick==='week'){if(requestQuick==='week')end.setDate(end.getDate()+6);$('#requestFrom').value=dayKey(today);$('#requestTo').value=dayKey(end);}if(requestQuick==='overdue')$('#requestStatus').value='ALL';syncFilters();requestDraw();});
+      listen('#downloadRequests','click',()=>{
+        const cell=v=>{let text=String(v??'');if(/^[=+@\-\t\r]/.test(text))text="'"+text;return '"'+text.replaceAll('"','""')+'"';};
+        const lines=[['申请编号','状态','借用人','联系方式','课题组','地点','开始时间','预计归还','仪器','用途','拒绝原因','审批时间','最初开始时间','最初预计归还','变更次数','最近变更原因'],...requestSelection().map(r=>[r.id,label(r),r.borrower,r.contact,r.group,r.place,r.startAt,r.endAt,deviceText(r),r.purpose,r.rejectReason,r.reviewedAt,r.originalPeriod?.startAt||r.startAt,r.originalPeriod?.endAt||r.endAt,r.changeHistory?.length||0,latestChange(r)?.reason||''])];
+        const blob=new Blob(['\ufeff'+lines.map(row=>row.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`借用登记汇总-${dayKey(new Date())}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+      });requestDraw();
+    }
+
     if(view==='devices'){$('#adminContent').innerHTML=`<div class="section-head"><h2>设备管理 <span id="deviceCount" class="meta"></span></h2><button id="addDevice" type="button">新增设备</button></div><div class="toolbar"><div class="grow"><label for="deviceSearch">搜索设备</label><input id="deviceSearch" name="deviceSearch" type="search" placeholder="名称、编号、型号或位置…" autocomplete="off"></div><div><label for="deviceOpen">开放状态</label><select id="deviceOpen" name="deviceOpen"><option value="">全部设备</option><option value="true">学生端开放</option><option value="false">学生端隐藏</option></select></div></div><details><summary>更多筛选</summary><div class="toolbar"><div class="field"><label for="teacherFilter">归属老师</label><select id="teacherFilter" name="teacherFilter"></select></div><div class="field"><label for="yearFilter">购买年限</label><select id="yearFilter" name="yearFilter"></select></div><div class="field"><label for="purposeFilter">用途标签</label><select id="purposeFilter" name="purposeFilter"></select></div></div></details><div id="deviceEditor" hidden></div><div id="deviceList" class="list section"></div>`;listen('#addDevice','click',()=>showDeviceForm());listen('#deviceSearch','input',deviceDraw);for(const id of ['deviceOpen','teacherFilter','yearFilter','purposeFilter'])listen('#'+id,'change',deviceDraw);listen('#deviceList','click',e=>{const edit=e.target.closest('[data-edit]'),toggle=e.target.closest('[data-toggle]');if(edit)showDeviceForm(inventory().find(d=>d.id===edit.dataset.edit));if(toggle){const list=inventory(),d=list.find(d=>d.id===toggle.dataset.toggle);if(d){d.openToStudent=!d.openToStudent;save(KEYS.devices,list);deviceDraw();msg('#pageMessage',`${d.name}已${d.openToStudent?'设为开放':'隐藏'}。`);}}});deviceDraw();}
     if(view==='data'){$('#adminContent').innerHTML=`<h2>原始数据汇总</h2><div class="toolbar"><div class="grow"><label for="uploadSearch">搜索学生或文件</label><input id="uploadSearch" name="uploadSearch" type="search" placeholder="学生、课题组、文件或记录编号…" autocomplete="off"></div><div><label for="uploadDevice">仪器</label><select id="uploadDevice" name="uploadDevice"></select></div><div><label for="uploadStart">采集开始日期</label><input id="uploadStart" name="uploadStart" type="date"></div><div><label for="uploadEnd">采集结束日期</label><input id="uploadEnd" name="uploadEnd" type="date"></div></div><p class="help">按采集时间与筛选日期的重叠范围查询。</p><div id="uploadList"></div>`;listen('#uploadSearch','input',dataDraw);for(const id of ['uploadDevice','uploadStart','uploadEnd'])listen('#'+id,'change',dataDraw);dataDraw();}
-    function refresh(){totals();if(view==='todo')todoDraw();if(view==='requests')requestDraw();if(view==='devices')deviceDraw();if(view==='data')dataDraw();}
-    listen('#adminContent','click',e=>{const approve=e.target.closest('[data-approve]'),reject=e.target.closest('[data-reject]'),confirm=e.target.closest('[data-confirm]');if(approve){const id=approve.dataset.approve;updateRecord(id,r=>r.status==='待审批',r=>{if(!validDate(r.startAt)||!validDate(r.endAt)||new Date(r.endAt)<=new Date(r.startAt)||new Date(r.endAt)<=new Date())throw new Error('申请时段无效或预计归还时间已过去，请拒绝并让学生重新申请。');const list=inventory();for(const device of r.devices||[]){const d=list.find(x=>x.id===device.id);if(!d||!openDevice(d)||!usable(d))throw new Error(`${device.name}已暂停借用，请核对设备状态。`);if(conflicts(d,r.startAt,r.endAt,r.id).length)throw new Error(`${device.name}存在排期冲突，请先处理冲突记录。`);}r.status='已通过';r.reviewedAt=stamp();r.rejectReason='';});refresh();msg('#pageMessage','申请已通过，学生端会显示对应预约状态。');}if(reject){const row=reject.closest('[data-row-id]');if($('.reject-form',row))return;row.insertAdjacentHTML('beforeend',`<form class="reject-form" data-reject-form="${esc(reject.dataset.reject)}"><label>拒绝原因<textarea name="reason" required maxlength="1000" placeholder="说明原因，方便学生修改后再次申请…"></textarea></label><div class="actions"><button type="submit">确认拒绝</button><button type="button" class="secondary" data-cancel-reject>取消</button></div></form>`);$('textarea',row).focus();}if(e.target.closest('[data-cancel-reject]'))e.target.closest('.reject-form').remove();if(confirm){updateRecord(confirm.dataset.confirm,r=>r.status==='待归还确认',r=>{r.status='已归还';r.returnedAt=stamp();});refresh();msg('#pageMessage','归还已确认，学生端状态已更新。');}});
-    listen('#adminContent','submit',e=>{const form=e.target.closest('[data-reject-form]');if(!form)return;e.preventDefault();const reason=form.elements.reason.value.trim();if(!reason)throw new Error('请填写拒绝原因。');updateRecord(form.dataset.rejectForm,r=>r.status==='待审批',r=>{r.status='已拒绝';r.rejectReason=reason;r.reviewedAt=stamp();});refresh();msg('#pageMessage','申请已拒绝，原因已同步到学生端。');});
+
+    function refresh(){
+      totals();
+      if(activeRecordEditor?.form.isConnected){const current=records().find(r=>r.id===activeRecordEditor.id);if(!current||recordToken(current)!==activeRecordEditor.token)msg('#recordEditMessage','这条记录已在其他页面发生变更。请取消编辑，重新打开后核对。');return;}
+      if(view==='todo')todoDraw();if(view==='requests')requestDraw();if(view==='devices')deviceDraw();if(view==='data')dataDraw();
+    }
+    listen('#adminContent','click',e=>{
+      const management=e.target.closest('[data-record-action]');
+      if(management){openRecordEditor(management.dataset.recordAction,management.dataset.recordId);return;}
+      if(e.target.closest('[data-close-record-editor]')){closeRecordEditor();return;}
+      const approve=e.target.closest('[data-approve]'),reject=e.target.closest('[data-reject]'),confirm=e.target.closest('[data-confirm]');
+      if(approve){updateRecord(approve.dataset.approve,r=>r.status==='待审批',r=>{if(!validDate(r.startAt)||!validDate(r.endAt)||new Date(r.endAt)<=new Date(r.startAt)||new Date(r.endAt)<=new Date())throw new Error('申请时段无效或预计归还时间已过去，请拒绝并让学生重新申请。');const list=inventory();for(const device of r.devices||[]){const d=list.find(x=>x.id===device.id);if(!d||!openDevice(d)||!usable(d))throw new Error(`${device.name}已暂停借用，请核对设备状态。`);if(conflicts(d,r.startAt,r.endAt,r.id).length)throw new Error(`${device.name}存在排期冲突，请先处理冲突记录。`);}r.status='已通过';r.reviewedAt=stamp();r.rejectReason='';});refresh();msg('#pageMessage','申请已通过，学生端会显示对应预约状态。');}
+      if(reject)openRecordEditor('reject',reject.dataset.reject);
+      if(confirm){updateRecord(confirm.dataset.confirm,r=>r.status==='待归还确认',r=>{r.status='已归还';r.returnedAt=stamp();});refresh();msg('#pageMessage','归还已确认，学生端状态已更新。');}
+    });
+    listen('#adminContent','submit',e=>{const form=e.target.closest('[data-record-form]');if(!form)return;e.preventDefault();saveRecordEditor(form);});
+
     totals();return refresh;
   }
   function boot(){const page=document.body.dataset.page;header(page);inventory();const refresh=({home,borrow,returns,data:dataPage,status:statusPage,admin}[page])();window.addEventListener('storage',event=>{if(Object.values(KEYS).includes(event.key)){try{refresh();}catch(error){msg('#pageMessage',error.message,true);}}});window.addEventListener('pageshow',event=>{if(event.persisted)refresh();});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refresh();});}
   // Export pure workflow helpers for focused regression tests without a browser.
-  const api={KEYS,CATEGORIES,PAGES,label,overdue,conflicts,fixedBookings,normalizeDevice,openDevice,localInput};
+  const api={KEYS,CATEGORIES,PAGES,label,overdue,conflicts,fixedBookings,normalizeDevice,openDevice,localInput,applyCorrection,filterBorrowRecords,appendHistory,correctionActions,recordToken};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   if(typeof document!=='undefined'){try{boot();}catch(error){const app=$('#app');app.innerHTML=`<h1>暂时无法打开页面</h1><p>${esc(error.message)}</p><a href="${PAGES.home}">返回仪器首页</a>`;}}
 })();

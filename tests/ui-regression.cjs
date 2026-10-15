@@ -5,6 +5,7 @@ const http = require('node:http');
 const {chromium} = require('playwright');
 const root = path.resolve(__dirname,'..');
 const api = require('../assets/device-common.js');
+require('./record-management.cjs');
 const output = path.join(root,'test-results','ui');
 fs.mkdirSync(output,{recursive:true});
 const checks=[];
@@ -35,6 +36,7 @@ const server=http.createServer((req,res)=>{const url=new URL(req.url,'http://127
  try{
   await goto(api.PAGES.home);
   assert.equal(await page.locator('#deviceList .list-row').count(),11);
+  await goto('index.html');assert.equal(await page.locator('#deviceList .list-row').count(),11);
   await page.locator('#searchInput').fill('手持气象站');
   await page.getByRole('link',{name:'申请借用',exact:true}).click();
   assert.match(await page.locator('#selectedStrip').innerText(),/手持气象站/);
@@ -119,11 +121,54 @@ const server=http.createServer((req,res)=>{const url=new URL(req.url,'http://127
   await page.locator('#functionMenu').click();await page.locator('#closeFunctionDrawer').click();assert(await page.locator('#functionDrawer').isHidden());
   for(const width of [1440,390]){await page.setViewportSize({width,height:1000});await page.locator('#functionMenu').click();assert(await page.locator('#functionDrawer').isVisible());await page.locator('#functionDrawer').evaluate(el=>Promise.all(el.getAnimations().map(animation=>animation.finished)));assert(await page.locator('#functionDrawer').evaluate(el=>el.getBoundingClientRect().right<=innerWidth+1));await page.screenshot({path:path.join(output,`drawer-${width}.png`),fullPage:false});await page.keyboard.press('Escape');}
   pass('四项侧栏导航、保留顶部入口、键盘焦点、Esc／遮罩／关闭按钮与手机适配');
+  const managementDevice={id:'TEST-DEVICE',name:'管理功能验证仪器',category:'气象与风雨监测类',location:'测试柜位',status:'可预订',openToStudent:true,booked:[]};
+  const returnDevice={...managementDevice,id:'RETURN-DEVICE',name:'归还纠正验证仪器'};
+  const managementAt=h=>api.localInput(new Date(Date.now()+h*3600000));
+  const baseRecord={borrower:'日期管理测试学生',contact:'test-contact',place:'实验室603',purpose:'日期管理验证',devices:[managementDevice],customField:'keep',createdAt:'测试记录'};
+  const managed=[
+    {...baseRecord,id:'SCHEDULE-A',status:'已通过',startAt:managementAt(48),endAt:managementAt(52)},
+    {...baseRecord,id:'SCHEDULE-B',status:'已通过',startAt:managementAt(56),endAt:managementAt(60)},
+    {...baseRecord,id:'ACTIVE-M',status:'已通过',startAt:managementAt(-2),endAt:managementAt(2)},
+    {...baseRecord,id:'REJECTED-M',status:'已拒绝',rejectReason:'原拒绝原因',startAt:managementAt(72),endAt:managementAt(76)},
+    {...baseRecord,id:'CANCEL-M',status:'待审批',startAt:managementAt(80),endAt:managementAt(84)},
+    {...baseRecord,id:'STALE-M',status:'待审批',startAt:managementAt(88),endAt:managementAt(92)},
+    {...baseRecord,id:'REVOKE-M',status:'已通过',startAt:managementAt(96),endAt:managementAt(100)},
+    {...baseRecord,id:'RETURN-M',status:'已归还',startAt:managementAt(-48),endAt:managementAt(-24),devices:[returnDevice],returnSubmittedAt:'原归还提交时间',returnedAt:'原验收时间',returnLocation:'原柜位',returnNote:'原备注'}
+  ];
+  await page.evaluate(({key,devices,items})=>{localStorage.setItem(key.devices,JSON.stringify([...JSON.parse(localStorage.getItem(key.devices)),...devices]));localStorage.setItem(key.records,JSON.stringify([...JSON.parse(localStorage.getItem(key.records)),...items]));},{key,devices:[managementDevice,returnDevice],items:managed});
+  const requestsUrl=api.PAGES.admin+'?view=requests&device=TEST-DEVICE';
+  await goto(requestsUrl);
+  await page.getByRole('button',{name:'今天',exact:true}).click();assert.equal(await page.locator('#requestList [data-row-id]').count(),1);assert.equal(await page.locator('#requestList [data-row-id]').getAttribute('data-row-id'),'ACTIVE-M');
+  await page.getByRole('button',{name:'未来一周',exact:true}).click();assert.equal(await page.locator('#requestList [data-row-id]').count(),7);
+  await page.getByRole('button',{name:'全部日期',exact:true}).click();await page.locator('#requestFrom').fill('2099-02-02');await page.locator('#requestTo').fill('2099-02-01');await page.locator('#requestTo').blur();assert.match(await page.locator('#requestFilterMessage').innerText(),/不能早于/);
+  await page.getByRole('button',{name:'全部日期',exact:true}).click();
+  const openManagement=async(recordId,action)=>{const row=page.locator(`[data-row-id="${recordId}"]`);await row.locator('.record-more > summary').click();await row.locator(`[data-record-action="${action}"]`).click();assert(await row.locator('[data-record-form]').evaluate(form=>form.contains(document.activeElement)));};
+  const currentRecord=recordId=>page.evaluate(({key,id})=>JSON.parse(localStorage.getItem(key)).find(r=>r.id===id),{key:key.records,id:recordId});
+  await openManagement('SCHEDULE-A','period');await page.locator('#editEndAt').fill(managementAt(58));await page.locator('#recordChangeReason').fill('外场实验延期');await page.getByRole('button',{name:'保存日期',exact:true}).click();assert.match(await page.locator('#recordEditMessage').innerText(),/排期|已有申请/);assert.equal((await currentRecord('SCHEDULE-A')).endAt,managed[0].endAt);
+  await page.locator('#editEndAt').fill(managementAt(54));await page.getByRole('button',{name:'保存日期',exact:true}).click();let changed=await currentRecord('SCHEDULE-A');assert.equal(changed.endAt,managementAt(54));assert.equal(changed.changeHistory.at(-1).reason,'外场实验延期');assert.equal(changed.customField,'keep');
+  await openManagement('SCHEDULE-A','undoLast');await page.locator('#recordChangeReason').fill('撤销测试改期');await page.getByRole('button',{name:'确认撤销变更',exact:true}).click();changed=await currentRecord('SCHEDULE-A');assert.equal(changed.endAt,managed[0].endAt);assert.equal(changed.changeHistory.length,2);assert.equal(changed.changeHistory.at(-1).action,'撤销上次变更');
+  await openManagement('ACTIVE-M','period');assert(await page.locator('#editStartAt').evaluate(el=>el.readOnly));await page.locator('#editEndAt').fill(managementAt(3));await page.locator('#recordChangeReason').fill('使用中延期一小时');await page.getByRole('button',{name:'保存日期',exact:true}).click();assert.equal((await currentRecord('ACTIVE-M')).startAt,managed[2].startAt);
+  pass('后台日期快捷筛选、无效范围、改期冲突拦截、改期撤销与使用中开始时间保护');
+  await openManagement('REVOKE-M','revoke');await page.locator('#recordChangeReason').fill('误通过申请');await page.getByRole('button',{name:'确认撤回',exact:true}).click();assert.equal((await currentRecord('REVOKE-M')).status,'待审批');
+  await openManagement('REJECTED-M','reopen');await page.locator('#recordChangeReason').fill('误拒绝，重新审核');await page.getByRole('button',{name:'恢复待审批',exact:true}).click();assert.equal((await currentRecord('REJECTED-M')).status,'待审批');assert(!Object.hasOwn(await currentRecord('REJECTED-M'),'rejectReason'));
+  await openManagement('CANCEL-M','cancel');await page.locator('#recordChangeReason').fill('实验取消');await page.getByRole('button',{name:'确认取消预约',exact:true}).click();assert.equal((await currentRecord('CANCEL-M')).status,'已取消');
+  await openManagement('CANCEL-M','undoLast');await page.locator('#recordChangeReason').fill('误取消，恢复申请');await page.getByRole('button',{name:'确认撤销变更',exact:true}).click();assert.equal((await currentRecord('CANCEL-M')).status,'待审批');
+  await page.locator('#requestDevice').selectOption('RETURN-DEVICE');const uploadsBefore=await page.evaluate(k=>localStorage.getItem(k),key.uploads);await openManagement('RETURN-M','undoReturn');await page.locator('#recordChangeReason').fill('误点归还确认');await page.getByRole('button',{name:'恢复待验收',exact:true}).click();let restoredReturn=await currentRecord('RETURN-M');assert.equal(restoredReturn.status,'待归还确认');assert(!Object.hasOwn(restoredReturn,'returnedAt'));assert.equal(restoredReturn.returnNote,'原备注');assert.equal(await page.evaluate(k=>localStorage.getItem(k),key.uploads),uploadsBefore);
+  await page.locator('[data-confirm="RETURN-M"]').click();await page.evaluate(({key,item})=>{const all=JSON.parse(localStorage.getItem(key));all.push(item);localStorage.setItem(key,JSON.stringify(all));},{key:key.records,item:{...managed[0],id:'RETURN-BLOCKER',devices:[returnDevice]}});
+  await goto(api.PAGES.admin+'?view=requests&device=RETURN-DEVICE');await openManagement('RETURN-M','undoReturn');await page.locator('#recordChangeReason').fill('尝试恢复设备占用');await page.getByRole('button',{name:'恢复待验收',exact:true}).click();assert.match(await page.locator('#recordEditMessage').innerText(),/排期|已有申请/);assert.equal((await currentRecord('RETURN-M')).status,'已归还');await page.getByRole('button',{name:'取消修改',exact:true}).click();
+  pass('撤回误审批、重新打开拒绝、取消与恢复预约、误验收恢复及后续预约冲突保护');
+  await goto(requestsUrl);await openManagement('STALE-M','period');await page.locator('#editEndAt').fill(managementAt(94));await page.locator('#recordChangeReason').fill('准备延期');
+  const updater=await context.newPage();await updater.goto(base+api.PAGES.home);await updater.evaluate(k=>{const all=JSON.parse(localStorage.getItem(k));all.find(r=>r.id==='STALE-M').place='另一标签页修改的位置';localStorage.setItem(k,JSON.stringify(all));},key.records);
+  await page.waitForFunction(()=>document.querySelector('#recordEditMessage').textContent.includes('其他页面'));assert.equal(await page.locator('#recordChangeReason').inputValue(),'准备延期');await page.getByRole('button',{name:'保存日期',exact:true}).click();assert.match(await page.locator('#recordEditMessage').innerText(),/其他页面/);assert.equal((await currentRecord('STALE-M')).endAt,managed[5].endAt);await page.getByRole('button',{name:'取消修改',exact:true}).click();await updater.close();
+  await page.locator('#requestSearch').fill('SCHEDULE-A');const filteredDownloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:'下载汇总表',exact:true}).click();const filteredDownload=await filteredDownloadPromise;await filteredDownload.saveAs(path.join(output,'filtered-export.csv'));const csv=fs.readFileSync(path.join(output,'filtered-export.csv'),'utf8');assert.equal(csv.charCodeAt(0),0xfeff);assert.equal(csv.split('\r\n').length,2);assert.match(csv,/SCHEDULE-A/);assert(!csv.includes('SCHEDULE-B'));assert.match(csv,/最近变更原因/);
+  await goto(api.PAGES.status);const studentRow=page.locator('#activeList .list-row').filter({hasText:'SCHEDULE-A'});await studentRow.locator('.change-history > summary').click();assert.match(await studentRow.locator('.change-history').innerText(),/外场实验延期/);assert.match(await studentRow.locator('.change-history').innerText(),/撤销测试改期/);
+  pass('跨标签页旧编辑保护、筛选结果 CSV 与学生端变更历史同步');
+  for(const width of [1440,390]){await page.setViewportSize({width,height:1000});await goto(requestsUrl);await page.locator('#requestSearch').fill('SCHEDULE-A');await page.locator('.change-history > summary').click();await page.screenshot({path:path.join(output,`record-history-${width}.png`),fullPage:true});await openManagement('SCHEDULE-A','period');await page.screenshot({path:path.join(output,`record-editor-${width}.png`),fullPage:true});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.getByRole('button',{name:'取消修改',exact:true}).click();}
   const screenshotRoutes=[['home',api.PAGES.home],['borrow',api.PAGES.borrow+'?device=2509154E'],['returns',api.PAGES.returns+'?record=ACTIVE-FIXTURE'],['data',api.PAGES.data+'?record='+id],['status',api.PAGES.status],['admin',api.PAGES.admin]];
   const overflows=[];
   for(const [name,route] of screenshotRoutes){for(const width of [1440,390]){await page.setViewportSize({width,height:1000});await goto(route);const sizes=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth}));if(sizes.scroll>sizes.width+1)overflows.push({name,...sizes});const unnamed=await page.locator('input:not([type=hidden]),select,textarea').evaluateAll(els=>els.filter(el=>!el.getAttribute('aria-label')&&!el.labels?.length).map(el=>el.id));assert.deepEqual(unnamed,[],name+' controls missing labels');if(name==='borrow'&&width===390)assert(await page.locator('#borrowForm').evaluate(el=>el.getBoundingClientRect().top)<350);await page.screenshot({path:path.join(output,`${name}-${width}.png`),fullPage:true});}}
   assert.deepEqual(overflows,[]);assert.deepEqual(errors,[]);pass('六个页面桌面与手机截图、无横向溢出、表单标签和控制台检查');
-  fs.writeFileSync(path.join(output,'results.json'),JSON.stringify({checks,screenshots:screenshotRoutes.length*2+2,consoleErrors:errors,overflows},null,2));
+  fs.writeFileSync(path.join(output,'results.json'),JSON.stringify({checks,screenshots:screenshotRoutes.length*2+6,consoleErrors:errors,overflows},null,2));
   console.log('Verified',checks.length,'groups; screenshots:',output);
  } catch(error) {fs.writeFileSync(path.join(output,'failure.json'),JSON.stringify({url:page.url(),body:await page.locator('body').innerText(),storage:await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage)))},null,2));await page.screenshot({path:path.join(output,'failure.png'),fullPage:true});throw error;} finally {await browser.close();server.close();}
 })().catch(error=>{console.error(error);server.close();process.exitCode=1;});
