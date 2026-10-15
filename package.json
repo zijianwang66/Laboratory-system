@@ -1,0 +1,13 @@
+{
+  "name": "laboratory-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "实验室仪器借用与管理前端原型",
+  "scripts": {
+    "test": "node tests/ui-regression.cjs",
+    "check": "node --check assets/device-common.js"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

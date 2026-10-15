@@ -1,0 +1,1945 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>第五阶段｜实验室设备借用排期 Demo</title>
+  <style>
+    :root {
+      --ink: #1a1a1a;
+      --muted: #666;
+      --line: #e1e1e1;
+      --fill: #f6fcfb;
+      --brand: #28b894;
+      --brand-dark: #1a1a1a;
+      --accent: #28b894;
+      --ok: #188038;
+      --warn: #b06000;
+      --radius: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+      color: var(--ink);
+      background: #fff;
+      line-height: 1.5;
+    }
+
+    main {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 32px 18px 48px;
+    }
+
+    .page-header {
+      display: grid;
+      grid-template-columns: 330px minmax(0, 1fr);
+      gap: 24px;
+      align-items: center;
+      margin-bottom: 20px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+      box-shadow: none;
+    }
+
+    .logo-panel {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 142px;
+      border: 1px solid #ece4db;
+      border-radius: 16px;
+      background:
+        radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.18) 1px, transparent 1.2px) 0 0 / 36px 30px,
+        linear-gradient(108deg, #fff 0%, #fff 70%, #fff4eb 100%);
+      overflow: hidden;
+    }
+
+    .logo-mark {
+      width: 300px;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .header-copy {
+      min-width: 0;
+    }
+
+    .stage-tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border: 1px solid rgba(40, 184, 148, 0.22);
+      border-radius: 999px;
+      color: var(--brand-dark);
+      background: rgba(40, 184, 148, 0.08);
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      letter-spacing: 0;
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .headline-char {
+      display: inline-block;
+      opacity: 0;
+      transform: translateY(14px);
+      animation: revealChar 0.5s ease forwards;
+      animation-delay: calc(var(--i) * 45ms);
+    }
+
+    @keyframes revealChar {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .quick-path {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .quick-path span {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      color: var(--ink);
+      background: #f6f6f6;
+      font-size: 13px;
+    }
+
+    form {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: none;
+    }
+
+    fieldset {
+      margin: 0 0 22px;
+      padding: 0;
+      border: 0;
+    }
+
+    legend {
+      width: 100%;
+      padding: 0 0 10px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--brand-dark);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      color: #333;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font: inherit;
+      color: var(--ink);
+      background: #fff;
+    }
+
+    textarea {
+      min-height: 90px;
+      resize: vertical;
+    }
+
+    input[readonly] {
+      background: var(--fill);
+      color: #3c4043;
+    }
+
+    .hint {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .device-info {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+      padding: 14px;
+      border: 1px solid #d7e6f5;
+      border-radius: var(--radius);
+      background: var(--fill);
+    }
+
+    .info-item span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .info-item strong {
+      display: block;
+      margin-top: 3px;
+      font-size: 14px;
+      word-break: break-word;
+    }
+
+    .category-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .category-group {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .category-group[open] {
+      border-color: #bdd6ec;
+      box-shadow: none;
+    }
+
+    .category-group summary {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      color: var(--brand-dark);
+      background: var(--fill);
+      font-weight: 700;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .category-group summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .category-count {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .device-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      padding: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .device-card {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 10px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .device-card.is-previewed {
+      border-color: var(--brand);
+      box-shadow: inset 0 0 0 1px rgba(40, 184, 148, 0.34);
+    }
+
+    .device-card.unavailable {
+      color: #777;
+      background: #f7f7f7;
+    }
+
+    .device-card input {
+      width: auto;
+      margin-top: 4px;
+    }
+
+    .device-title {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+
+    .device-meta {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .device-next {
+      display: block;
+      margin-top: 5px;
+      color: #137333;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .badge-ok {
+      color: #137333;
+      background: rgba(40, 184, 148, 0.12);
+    }
+
+    .badge-busy {
+      color: #9b1c1c;
+      background: #fce8e6;
+    }
+
+    .selected-list {
+      display: grid;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .selected-chip {
+      display: inline-flex;
+      width: fit-content;
+      max-width: 100%;
+      padding: 5px 9px;
+      border-radius: 999px;
+      color: #0b3f67;
+      background: rgba(40, 184, 148, 0.08);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .availability-panel,
+    .admin-summary {
+      margin-top: 14px;
+      padding: 14px;
+      border: 1px solid rgba(40, 184, 148, 0.22);
+      border-radius: var(--radius);
+      background: var(--fill);
+    }
+
+    .availability-head,
+    .month-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .availability-head h3,
+    .month-head h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .summary-metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .metric {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 3px;
+      font-size: 20px;
+    }
+
+    .radio-row {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      min-height: 44px;
+    }
+
+    .radio-row label {
+      display: inline-flex;
+      gap: 7px;
+      align-items: center;
+      margin: 0;
+      font-weight: 500;
+    }
+
+    .radio-row input {
+      width: auto;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      padding-top: 8px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 18px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .primary {
+      background: var(--ink);
+      color: #fff;
+    }
+
+    .primary:hover {
+      background: #333;
+    }
+
+    .secondary {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+    }
+
+    .result {
+      display: none;
+      margin-top: 18px;
+      padding: 16px;
+      border-left: 4px solid var(--ok);
+      border-radius: 12px;
+      background: #f1f8f4;
+    }
+
+    .result h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      color: var(--ok);
+    }
+
+    .result p {
+      margin: 4px 0;
+    }
+
+    .status-line {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      color: var(--warn);
+      background: #fff4e5;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .records-panel {
+      margin-top: 22px;
+      padding: 22px 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+      box-shadow: none;
+    }
+
+    .records-head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .records-head h2 {
+      margin: 0;
+      color: var(--brand-dark);
+      font-size: 20px;
+    }
+
+    .records-meta {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    table {
+      width: 100%;
+      min-width: 920px;
+      border-collapse: collapse;
+      background: #fff;
+    }
+
+    th,
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    th {
+      color: #3c4043;
+      background: #f8fbfe;
+      background: var(--fill);
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      color: var(--warn);
+      background: #fff4e5;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .status-approved {
+      color: #137333;
+      background: rgba(40, 184, 148, 0.12);
+    }
+
+    .status-rejected {
+      color: #9b1c1c;
+      background: #fce8e6;
+    }
+
+    .status-returned {
+      color: #174ea6;
+      background: #e8f0fe;
+    }
+
+    .approval-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .approval-card {
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+    }
+
+    .approval-card.approved,
+    .approval-card.rejected,
+    .approval-card.returned {
+      background: #fafafa;
+    }
+
+    .approval-top {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .approval-title {
+      margin: 0 0 4px;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .approval-detail {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .approval-actions {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .return-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid rgba(40, 184, 148, 0.22);
+      border-radius: 12px;
+      background: var(--fill);
+    }
+
+    .return-actions .full-row {
+      grid-column: 1 / -1;
+    }
+
+    .return-actions input[type="file"] {
+      color: var(--muted);
+      background: #f7f7f7;
+    }
+
+    .danger {
+      border: 1px solid #f4c7c3;
+      background: #fff;
+      color: #9b1c1c;
+    }
+
+    .mini-button {
+      padding: 9px 14px;
+      font-size: 14px;
+    }
+
+    .empty-records {
+      padding: 18px;
+      color: var(--muted);
+      background: #fafbfc;
+      border: 1px dashed #cfd8dc;
+      border-radius: 6px;
+      text-align: center;
+    }
+
+    .summary-row {
+      cursor: pointer;
+    }
+
+    .summary-row.is-active td {
+      background: rgba(40, 184, 148, 0.08);
+    }
+
+    .mini-calendar {
+      width: 100%;
+      min-width: 1120px;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    .mini-calendar th,
+    .mini-calendar td {
+      padding: 7px 6px;
+      text-align: center;
+      vertical-align: middle;
+      font-size: 12px;
+    }
+
+    .mini-calendar th:first-child,
+    .mini-calendar td:first-child {
+      width: 180px;
+      text-align: left;
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      background: #fff;
+    }
+
+    .slot {
+      border-radius: 6px;
+      color: #137333;
+      background: rgba(40, 184, 148, 0.16);
+      font-weight: 700;
+    }
+
+    .slot-busy {
+      color: #8a4b00;
+      background: #fff4e5;
+    }
+
+    .slot-unknown {
+      color: #777;
+      background: #f1f3f4;
+    }
+
+    .calendar-day {
+      display: block;
+      color: #3c4043;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .availability-note {
+      margin: 0 0 12px;
+      padding: 10px 12px;
+      border: 1px solid rgba(40, 184, 148, 0.22);
+      border-radius: 12px;
+      background: var(--fill);
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    .legend-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 720px) {
+      main {
+        padding: 22px 12px 36px;
+      }
+
+      .page-header {
+        grid-template-columns: 1fr;
+        padding: 14px;
+      }
+
+      .logo-panel {
+        min-height: 118px;
+      }
+
+      .logo-mark {
+        width: 260px;
+      }
+
+      form {
+        padding: 18px;
+      }
+
+      .records-panel {
+        padding: 18px;
+      }
+
+      .grid,
+      .device-info,
+      .device-list,
+      .summary-metrics,
+      .approval-actions {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <div class="logo-panel" aria-label="华南理工大学可持续建筑与气候设计研究所 SCD SCUT">
+        <svg class="logo-mark" viewBox="0 0 520 220" role="img" aria-labelledby="logoTitle">
+          <title id="logoTitle">华南理工大学可持续建筑与气候设计研究所 SCD SCUT</title>
+          <line x1="172" y1="22" x2="172" y2="198" stroke="#111" stroke-width="6" stroke-linecap="round" />
+          <g font-family="'Microsoft YaHei', 'SimHei', sans-serif" font-size="27" font-weight="700" fill="#111">
+            <text x="38" y="58">气</text>
+            <text x="38" y="88">候</text>
+            <text x="38" y="118">设</text>
+            <text x="38" y="148">计</text>
+            <text x="38" y="178">研</text>
+            <text x="38" y="208">究</text>
+            <text x="82" y="46">可</text>
+            <text x="82" y="76">持</text>
+            <text x="82" y="106">续</text>
+            <text x="82" y="136">建</text>
+            <text x="82" y="166">筑</text>
+            <text x="126" y="34">华</text>
+            <text x="126" y="64">南</text>
+            <text x="126" y="94">理</text>
+            <text x="126" y="124">工</text>
+            <text x="126" y="154">大</text>
+            <text x="126" y="184">学</text>
+          </g>
+          <g font-family="Arial Black, Arial, sans-serif" font-size="82" font-weight="900" fill="none" stroke="#111" stroke-width="3.5" letter-spacing="3">
+            <text x="205" y="92">SCD.</text>
+            <text x="205" y="184">SCUT</text>
+          </g>
+        </svg>
+      </div>
+      <div class="header-copy">
+        <span class="stage-tag">第五阶段 Demo</span>
+        <h1>实验室设备借用申请、审批与排期</h1>
+        <p class="sub">审批通过后自动进入设备排期表，方便查看每台仪器的占用时间和使用地点。</p>
+        <div class="quick-path" aria-label="申请流程">
+          <span>选设备</span>
+          <span>填信息</span>
+          <span>提交申请</span>
+          <span>管理员审批</span>
+          <span>排期展示</span>
+        </div>
+      </div>
+    </header>
+
+    <form id="borrowForm">
+      <fieldset>
+        <legend>借用人</legend>
+        <div class="grid">
+          <div>
+            <label for="borrower">借用人</label>
+            <input id="borrower" name="borrower" required placeholder="填写姓名" />
+          </div>
+          <div>
+            <label for="contact">联系方式</label>
+            <input id="contact" name="contact" required placeholder="手机号或微信" />
+          </div>
+          <div class="full">
+            <label for="group">所属课题组 / 老师</label>
+            <input id="group" name="group" placeholder="如：殷实组 / 廖维老师 / 肖毅强老师" />
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>借用设备</legend>
+        <div class="grid">
+          <div>
+            <label for="deviceSearch">搜索设备 / 编号</label>
+            <input id="deviceSearch" placeholder="输入资产编号、名称、型号或位置筛选" />
+          </div>
+          <div>
+            <label for="deviceCodeSearch">快速按编号定位</label>
+            <input id="deviceCodeSearch" placeholder="如：2509154E" />
+          </div>
+        </div>
+
+        <div class="device-info" aria-live="polite">
+          <div class="info-item">
+            <span>已选仪器</span>
+            <strong id="assetCode">0 台</strong>
+          </div>
+          <div class="info-item">
+            <span>可借仪器</span>
+            <strong id="assetCategory">选择时间后自动校验档期</strong>
+          </div>
+          <div class="info-item">
+            <span>档期规则</span>
+            <strong id="assetLocation">无可用档期或使用中的设备不可勾选</strong>
+          </div>
+        </div>
+        <div id="selectedDevices" class="selected-list" aria-live="polite"></div>
+        <div id="availabilityPanel" class="availability-panel" hidden>
+          <div class="availability-head">
+            <h3 id="availabilityTitle">仪器可用范围</h3>
+            <div class="records-meta" id="availabilityMeta">点击仪器查看本月可借范围</div>
+          </div>
+          <p class="availability-note" id="availabilityNote">绿色表示可借日期，橙色表示已有排期，灰色表示当前状态需管理员确认。</p>
+          <div class="table-wrap">
+            <table class="mini-calendar">
+              <thead id="availabilityCalendarHead"></thead>
+              <tbody id="availabilityCalendarBody"></tbody>
+            </table>
+          </div>
+          <div class="legend-row">
+            <span><span class="badge badge-ok">绿色</span> 可借</span>
+            <span><span class="badge badge-busy">橙色</span> 已占用</span>
+            <span><span class="badge">灰色</span> 需确认</span>
+          </div>
+        </div>
+        <div id="categoryList" class="category-list"></div>
+        <p class="hint">设备信息来自现有资产清单。Demo 中预置了部分占用排期，用于演示“无档期不可借取”。</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>使用安排</legend>
+        <div class="grid">
+          <div>
+            <label for="place">使用地点</label>
+            <input id="place" name="place" required placeholder="如：实验室603 / 大学城 / 7楼室外" />
+          </div>
+          <div>
+            <label>是否带离实验室</label>
+            <div class="radio-row">
+              <label><input type="radio" name="leaveLab" value="是" required /> 是</label>
+              <label><input type="radio" name="leaveLab" value="否" /> 否</label>
+            </div>
+          </div>
+          <div>
+            <label for="startAt">借用开始时间</label>
+            <input id="startAt" name="startAt" type="datetime-local" required />
+          </div>
+          <div>
+            <label for="endAt">预计归还时间</label>
+            <input id="endAt" name="endAt" type="datetime-local" required />
+          </div>
+          <div class="full">
+            <label for="purpose">使用用途</label>
+            <textarea id="purpose" name="purpose" required placeholder="简单写明要做什么，例如：室外气象数据采集、温湿度监测、图形计算等"></textarea>
+          </div>
+          <div class="full">
+            <label for="note">备注</label>
+            <textarea id="note" name="note" placeholder="可填写排期说明、共同使用人、特殊注意事项等"></textarea>
+          </div>
+        </div>
+      </fieldset>
+
+      <div class="actions">
+        <button class="primary" type="submit">提交申请</button>
+        <button class="secondary" type="reset">清空</button>
+      </div>
+    </form>
+
+    <section class="result" id="result">
+      <h2>申请已生成</h2>
+      <div id="summary"></div>
+      <span class="status-line">状态：待审批</span>
+    </section>
+
+    <section class="records-panel" id="recordsPanel">
+      <div class="records-head">
+        <div>
+          <h2>申请记录</h2>
+          <div class="records-meta" id="recordsMeta">暂无申请记录</div>
+        </div>
+        <button class="secondary" type="button" id="clearRecords">清空 Demo 记录</button>
+      </div>
+      <div id="emptyRecords" class="empty-records">提交第一条申请后，这里会显示借用记录。</div>
+      <div class="table-wrap" id="recordsTableWrap" hidden>
+        <table>
+          <thead>
+            <tr>
+              <th>申请编号</th>
+              <th>申请人</th>
+              <th>借用仪器</th>
+              <th>使用地点</th>
+              <th>借用时间</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody id="recordsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="records-panel" id="approvalPanel">
+      <div class="records-head">
+        <div>
+          <h2>管理员审批</h2>
+          <div class="records-meta" id="approvalMeta">暂无待审批申请</div>
+        </div>
+      </div>
+      <div id="emptyApprovals" class="empty-records">提交申请后，管理员可在这里审批。</div>
+      <div id="approvalList" class="approval-list"></div>
+      <div class="admin-summary" id="adminSummary">
+        <div class="month-head">
+          <h3>管理员总汇总</h3>
+          <div class="records-meta" id="adminSummaryMeta">按当前记录自动更新</div>
+        </div>
+        <div class="summary-metrics">
+          <div class="metric"><span>全部申请</span><strong id="totalApplications">0</strong></div>
+          <div class="metric"><span>待审批</span><strong id="pendingApplications">0</strong></div>
+          <div class="metric"><span>已通过</span><strong id="approvedApplications">0</strong></div>
+          <div class="metric"><span>已归还</span><strong id="returnedApplications">0</strong></div>
+          <div class="metric"><span>涉及仪器</span><strong id="reservedDevices">0</strong></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>仪器分类</th>
+                <th>总数量</th>
+                <th>当前可借</th>
+                <th>本月有排期</th>
+              </tr>
+            </thead>
+            <tbody id="adminSummaryBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="records-panel" id="schedulePanel">
+      <div class="records-head">
+        <div>
+          <h2>设备排期</h2>
+          <div class="records-meta" id="scheduleMeta">暂无已通过排期</div>
+        </div>
+      </div>
+      <div id="emptySchedule" class="empty-records">管理员同意申请后，这里会显示设备占用排期。</div>
+      <div class="table-wrap" id="scheduleTableWrap" hidden>
+        <table>
+          <thead>
+            <tr>
+              <th>仪器</th>
+              <th>资产编号</th>
+              <th>借用人</th>
+              <th>使用地点</th>
+              <th>排期时间</th>
+              <th>申请编号</th>
+            </tr>
+          </thead>
+          <tbody id="scheduleBody"></tbody>
+        </table>
+      </div>
+      <div class="admin-summary">
+        <div class="month-head">
+          <h3 id="monthScheduleTitle">本月设备可用表</h3>
+          <div class="records-meta">点击上方或左侧仪器后，用户侧会显示单台绿色可用范围。</div>
+        </div>
+        <div class="table-wrap">
+          <table class="mini-calendar">
+            <thead id="monthScheduleHead"></thead>
+            <tbody id="monthScheduleBody"></tbody>
+          </table>
+        </div>
+        <div class="legend-row">
+          <span><span class="badge badge-ok">绿色</span> 可用</span>
+          <span><span class="badge badge-busy">橙色</span> 占用</span>
+          <span><span class="badge">灰色</span> 状态不确定</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const devices = [
+      { id: "2005880E", name: "图形工作站", model: "无", category: "COM 计算机与工作站类", location: "位置待确认" },
+      { id: "2010654E", name: "图形工作站", model: "组装", category: "COM 计算机与工作站类", location: "位置待确认" },
+      { id: "2013603E", name: "电脑显示器", model: "XMMNTWQ34", category: "DIS 显示与平板类", location: "位置待确认" },
+      { id: "2027043E", name: "黑球温度自记仪", model: "HQZY-1", category: "RAD 辐射与热舒适监测类", location: "建筑学院办公室" },
+      { id: "2027202E", name: "温湿度记录仪", model: "HOBO MX2301A", category: "ENV 环境温湿度监测类", location: "大学城使用" },
+      { id: "2027203E", name: "温湿度记录仪", model: "HOBO MX2301A", category: "ENV 环境温湿度监测类", location: "大学城使用" },
+      { id: "2027204E", name: "温湿度记录仪", model: "HOBO MX2301A", category: "ENV 环境温湿度监测类", location: "大学城使用" },
+      { id: "2027205E", name: "温湿度记录仪", model: "HOBO MX2301A", category: "ENV 环境温湿度监测类", location: "大学城使用" },
+      { id: "2027206E", name: "温湿度记录仪", model: "HOBO MX2301A", category: "ENV 环境温湿度监测类", location: "大学城使用（有一个在背包上）" },
+      { id: "2027207E", name: "温湿度记录仪", model: "HOBO MX2301A", category: "ENV 环境温湿度监测类", location: "建筑学院办公室" },
+      { id: "2027208E", name: "温湿度记录仪", model: "HOBO MX2301A", category: "ENV 环境温湿度监测类", location: "建筑学院办公室" },
+      { id: "2027209E", name: "黑球温度自记仪", model: "HQZY-1", category: "RAD 辐射与热舒适监测类", location: "建筑学院办公室" },
+      { id: "2027210E", name: "黑球温度自记仪", model: "HQZY-1", category: "RAD 辐射与热舒适监测类", location: "建筑学院办公室" },
+      { id: "2028334E", name: "笔记本电脑", model: "Thinkpad X1", category: "COM 计算机与工作站类", location: "位置待确认" },
+      { id: "2028723E", name: "TITAN RTX 显卡", model: "TITAN RTX", category: "ACC 电脑配件与外设类", location: "位置待确认" },
+      { id: "2129486E", name: "苹果平板电脑", model: "PHWK3CH/A", category: "DIS 显示与平板类", location: "位置待确认" },
+      { id: "2131142E", name: "LG笔记本", model: "16Z90P-G.AA78C", category: "COM 计算机与工作站类", location: "位置待确认" },
+      { id: "2131503E", name: "森海塞尔耳机", model: "MOMENTUM True Wireless2", category: "AV 影像与音频设备类", location: "位置待确认" },
+      { id: "2132587E", name: "CPU处理器", model: "AMD Threadripper 3970X", category: "ACC 电脑配件与外设类", location: "位置待确认" },
+      { id: "2136651E", name: "电脑显示器", model: "F34G4Q", category: "DIS 显示与平板类", location: "位置待确认" },
+      { id: "2200049E", name: "IPad 平板电脑", model: "2021 iPad9 10.2寸 64G", category: "DIS 显示与平板类", location: "位置待确认" },
+      { id: "2200050E", name: "智能键盘", model: "MX3L2CH/A", category: "ACC 电脑配件与外设类", location: "位置待确认" },
+      { id: "2200168E", name: "苹果平板电脑", model: "11寸 iPad Pro WLAN 128GB", category: "DIS 显示与平板类", location: "位置待确认" },
+      { id: "2200169E", name: "键盘", model: "MXNK2CH/A", category: "ACC 电脑配件与外设类", location: "位置待确认" },
+      { id: "2200170E", name: "光谱照度计", model: "320", category: "RAD 辐射与热舒适监测类", location: "位置待确认" },
+      { id: "2200693E", name: "移动工作站", model: "X1 CARBON-GVCD", category: "COM 计算机与工作站类", location: "位置待确认" },
+      { id: "2201455E", name: "工作站", model: "Huntkey 组装", category: "COM 计算机与工作站类", location: "位置待确认" },
+      { id: "2215693E", name: "显卡", model: "RTX3080Ti", category: "ACC 电脑配件与外设类", location: "位置待确认" },
+      { id: "2305198E", name: "硬盘", model: "希捷8TB", category: "ACC 电脑配件与外设类", location: "位置待确认" },
+      { id: "2305570E", name: "图形工作站", model: "1", category: "COM 计算机与工作站类", location: "位置待确认" },
+      { id: "2315167E", name: "无线麦克风", model: "大疆 DJI Mic", category: "AV 影像与音频设备类", location: "实验室603-防潮柜" },
+      { id: "2315244E", name: "苹果平板电脑", model: "iPad Pro", category: "DIS 显示与平板类", location: "位置待确认" },
+      { id: "2315631E", name: "键盘", model: "MXQT2CH/A", category: "ACC 电脑配件与外设类", location: "位置待确认" },
+      { id: "2319809E", name: "电脑椅", model: "无", category: "FUR 办公家具类", location: "实验室603-办公室" },
+      { id: "2322371E", name: "升降桌", model: "E3/E4", category: "FUR 办公家具类", location: "实验室603-办公室" },
+      { id: "2322776E", name: "笔记本电脑", model: "苹果 Z15W", category: "COM 计算机与工作站类", location: "位置待确认" },
+      { id: "2404323E", name: "数据采集器", model: "DV105 TRUWEL/DL1000X", category: "DAQ 数据采集与测量模块类", location: "实验室603" },
+      { id: "2404324E", name: "数据采集器", model: "DV105 TRUWEL/DL1000X", category: "DAQ 数据采集与测量模块类", location: "实验室603" },
+      { id: "2404325E", name: "电压测量模块", model: "TRUWEL/DV105", category: "DAQ 数据采集与测量模块类", location: "实验室603" },
+      { id: "2404326E", name: "电压测量模块", model: "TRUWEL/DV105", category: "DAQ 数据采集与测量模块类", location: "实验室603" },
+      { id: "2404929E", name: "四分量净辐射表", model: "Hukseflux /NR01", category: "RAD 辐射与热舒适监测类", location: "实验室603-防潮柜" },
+      { id: "2404930E", name: "四分量净辐射表", model: "Hukseflux /NR01", category: "RAD 辐射与热舒适监测类", location: "实验室603-防潮柜" },
+      { id: "2404931E", name: "四分量净辐射表", model: "Hukseflux /NR01", category: "RAD 辐射与热舒适监测类", location: "实验室603-防潮柜" },
+      { id: "2404932E", name: "四分量净辐射表", model: "Hukseflux /NR01", category: "RAD 辐射与热舒适监测类", location: "实验室603-防潮柜" },
+      { id: "2407148E", name: "气象站", model: "GMX500", category: "MET 气象与风雨监测类", location: "实验室603（背包）" },
+      { id: "2407447E", name: "电脑显示器", model: "SANC OF27UT Pro", category: "DIS 显示与平板类", location: "位置待确认" },
+      { id: "2407448E", name: "电脑显示器", model: "DELL P2425E", category: "DIS 显示与平板类", location: "位置待确认" },
+      { id: "2407449E", name: "电脑显示器", model: "DELL P2425E", category: "DIS 显示与平板类", location: "位置待确认" },
+      { id: "2409624E", name: "相机", model: "Insta360 X4", category: "AV 影像与音频设备类", location: "邱世龙在使用" },
+      { id: "2413277E", name: "数据采集器", model: "是德 DAQ970A", category: "DAQ 数据采集与测量模块类", location: "大学城使用" },
+      { id: "2413278E", name: "数据采集器模块", model: "是德 DAQM901A", category: "DAQ 数据采集与测量模块类", location: "大学城使用" },
+      { id: "2420809E", name: "雨滴谱仪", model: "OTT Parsivel2", category: "MET 气象与风雨监测类", location: "实验室7楼" },
+      { id: "2420810E", name: "雨滴谱仪", model: "OTT Parsivel2", category: "MET 气象与风雨监测类", location: "实验室7楼" },
+      { id: "2421280E", name: "雨量传感器", model: "锦州 LQC-YF12", category: "MET 气象与风雨监测类", location: "实验室7楼" },
+      { id: "2421281E", name: "风速计", model: "senseca HD2003.1", category: "MET 气象与风雨监测类", location: "实验室7楼" },
+      { id: "2421282E", name: "定制支架", model: "定制支架", category: "FUR 办公家具类", location: "实验室603室外，7楼室外" },
+      { id: "2500061E", name: "风速计", model: "senseca HD2003.1", category: "MET 气象与风雨监测类", location: "实验室7楼" },
+      { id: "2501977E", name: "温湿度记录仪", model: "HOBO MX2302A", category: "ENV 环境温湿度监测类", location: "大学城使用" },
+      { id: "2501978E", name: "温湿度记录仪", model: "HOBO MX2302A", category: "ENV 环境温湿度监测类", location: "大学城使用" },
+      { id: "2501979E", name: "温湿度记录仪", model: "HOBO MX2302A", category: "ENV 环境温湿度监测类", location: "大学城使用" },
+      { id: "2501980E", name: "温湿度记录仪", model: "HOBO MX2302A", category: "ENV 环境温湿度监测类", location: "位置待确认" },
+      { id: "2502600E", name: "除湿机", model: "美的 CF50BD/N7-DP5", category: "OTH 其他类", location: "实验室603" },
+      { id: "2502698E", name: "电压测量模块", model: "truwel DV105", category: "DAQ 数据采集与测量模块类", location: "大学城使用" },
+      { id: "2503615E", name: "联想笔记本电脑", model: "联想 Pro16GT", category: "COM 计算机与工作站类", location: "Adnan-使用" },
+      { id: "2508192E", name: "热舒适度仪器", model: "DELTAOHM HD323TC", category: "RAD 辐射与热舒适监测类", location: "实验室603-防潮柜（设计院购买）" },
+      { id: "2509148E", name: "室内温湿度照度数据记录器", model: "ONSET MX1104", category: "ENV 环境温湿度监测类", location: "实验室603-防潮柜（设计院购买）" },
+      { id: "2509149E", name: "室内温湿度照度数据记录器", model: "ONSET MX1104", category: "ENV 环境温湿度监测类", location: "实验室603-防潮柜（设计院购买）" },
+      { id: "2509150E", name: "室内温湿度照度数据记录器", model: "ONSET MX1104", category: "ENV 环境温湿度监测类", location: "实验室603-防潮柜（设计院购买）" },
+      { id: "2509151E", name: "室内温湿度照度数据记录器", model: "ONSET MX1104", category: "ENV 环境温湿度监测类", location: "实验室603-防潮柜（设计院购买）" },
+      { id: "2509152E", name: "室内温湿度照度数据记录器", model: "ONSET MX1104", category: "ENV 环境温湿度监测类", location: "实验室603-防潮柜（设计院购买）" },
+      { id: "2509153E", name: "室内温湿度照度数据记录器", model: "ONSET MX1104", category: "ENV 环境温湿度监测类", location: "实验室603-防潮柜（设计院购买）" },
+      { id: "2509154E", name: "手持气象站", model: "Kestrel 5500 Link", category: "MET 气象与风雨监测类", location: "实验室603-防潮柜（设计院购买）" },
+      { id: "2509155E", name: "温湿度记录器", model: "ONSET MX1101", category: "ENV 环境温湿度监测类", location: "实验室603-防潮柜（设计院购买）" },
+      { id: "2509274E", name: "图形工作站", model: "华硕 BP-WS4104-a1", category: "COM 计算机与工作站类", location: "实验室603" },
+      { id: "2603938E", name: "交换机", model: "H3C MS4300V2-28P", category: "NET 网络设备类", location: "实验室603服务器" },
+      { id: "2604547E", name: "蓄电池", model: "EASY SOLAR 旗圣锂电池", category: "PWR 电源与供电设备类", location: "实验室7楼" },
+      { id: "2604548E", name: "蓄电池", model: "EASY SOLAR 旗圣锂电池", category: "PWR 电源与供电设备类", location: "实验室7楼" },
+      { id: "2604549E", name: "逆控一体机", model: "Techfine 逆控一体机", category: "PWR 电源与供电设备类", location: "实验室7楼" },
+      { id: "2604550E", name: "逆控一体机", model: "Techfine 逆控一体机", category: "PWR 电源与供电设备类", location: "实验室7楼" },
+      { id: "2605500E", name: "显卡", model: "acrous 2080ti", category: "ACC 电脑配件与外设类", location: "实验室603" },
+      { id: "2605501E", name: "显卡", model: "acrous 2080ti", category: "ACC 电脑配件与外设类", location: "实验室603" },
+      { id: "2606090E", name: "平板显示器", model: "望远鲸平板显示器", category: "DIS 显示与平板类", location: "位置待确认" }
+    ];
+
+    const form = document.querySelector("#borrowForm");
+    const search = document.querySelector("#deviceSearch");
+    const codeSearch = document.querySelector("#deviceCodeSearch");
+    const categoryList = document.querySelector("#categoryList");
+    const selectedDevices = document.querySelector("#selectedDevices");
+    const assetCode = document.querySelector("#assetCode");
+    const assetCategory = document.querySelector("#assetCategory");
+    const assetLocation = document.querySelector("#assetLocation");
+    const startAtInput = document.querySelector("#startAt");
+    const endAtInput = document.querySelector("#endAt");
+    const result = document.querySelector("#result");
+    const summary = document.querySelector("#summary");
+    const recordsMeta = document.querySelector("#recordsMeta");
+    const recordsBody = document.querySelector("#recordsBody");
+    const recordsTableWrap = document.querySelector("#recordsTableWrap");
+    const emptyRecords = document.querySelector("#emptyRecords");
+    const clearRecords = document.querySelector("#clearRecords");
+    const approvalMeta = document.querySelector("#approvalMeta");
+    const approvalList = document.querySelector("#approvalList");
+    const emptyApprovals = document.querySelector("#emptyApprovals");
+    const scheduleMeta = document.querySelector("#scheduleMeta");
+    const scheduleBody = document.querySelector("#scheduleBody");
+    const scheduleTableWrap = document.querySelector("#scheduleTableWrap");
+    const emptySchedule = document.querySelector("#emptySchedule");
+    const availabilityPanel = document.querySelector("#availabilityPanel");
+    const availabilityTitle = document.querySelector("#availabilityTitle");
+    const availabilityMeta = document.querySelector("#availabilityMeta");
+    const availabilityNote = document.querySelector("#availabilityNote");
+    const availabilityCalendarHead = document.querySelector("#availabilityCalendarHead");
+    const availabilityCalendarBody = document.querySelector("#availabilityCalendarBody");
+    const totalApplications = document.querySelector("#totalApplications");
+    const pendingApplications = document.querySelector("#pendingApplications");
+    const approvedApplications = document.querySelector("#approvedApplications");
+    const returnedApplications = document.querySelector("#returnedApplications");
+    const reservedDevices = document.querySelector("#reservedDevices");
+    const adminSummaryMeta = document.querySelector("#adminSummaryMeta");
+    const adminSummaryBody = document.querySelector("#adminSummaryBody");
+    const monthScheduleTitle = document.querySelector("#monthScheduleTitle");
+    const monthScheduleHead = document.querySelector("#monthScheduleHead");
+    const monthScheduleBody = document.querySelector("#monthScheduleBody");
+
+    const categoryOrder = [
+      "风 / 气流",
+      "光",
+      "热",
+      "辐射",
+      "数据采集",
+      "实验辅助",
+      "计算显示",
+      "其他"
+    ];
+
+    const demoReservations = [
+      { deviceId: "2509154E", borrower: "已有预约", start: "2026-10-13T08:00", end: "2026-10-13T20:00" },
+      { deviceId: "2404929E", borrower: "已有预约", start: "2026-10-13T09:00", end: "2026-10-13T12:00" },
+      { deviceId: "2404323E", borrower: "已有预约", start: "2026-10-14T09:00", end: "2026-10-14T18:00" }
+    ];
+
+    const selectedDeviceIds = new Set();
+    let previewDeviceId = null;
+    const STORAGE_KEY = "scd_device_borrow_records_v1";
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function classifyDevice(device) {
+      const text = `${device.name} ${device.model} ${device.category}`.toLowerCase();
+      if (/风速|气象站|gmx|kestrel/.test(text)) return "风 / 气流";
+      if (/四分量净辐射|净辐射|辐射表|nr01/.test(text)) return "辐射";
+      if (/照度|光谱/.test(text)) return "光";
+      if (/温湿度|黑球|热舒适|除湿/.test(text)) return "热";
+      if (/数据采集|电压测量|daq|truwel|dv105/.test(text)) return "数据采集";
+      if (/支架|蓄电池|逆控|雨滴|雨量/.test(text)) return "实验辅助";
+      if (/工作站|电脑|显示器|平板|显卡|处理器|硬盘|键盘|交换机|耳机|麦克风|相机/.test(text)) return "计算显示";
+      return "其他";
+    }
+
+    devices.forEach((device) => {
+      device.domain = classifyDevice(device);
+    });
+
+    function hasBaseUnavailableState(device) {
+      return /大学城使用|在使用|背包|adnan|邱世龙/.test(String(device.location).toLowerCase());
+    }
+
+    function overlaps(startA, endA, startB, endB) {
+      return new Date(startA) < new Date(endB) && new Date(endA) > new Date(startB);
+    }
+
+    function toLocalInputValue(date) {
+      return [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, "0"),
+        String(date.getDate()).padStart(2, "0")
+      ].join("-") + "T" + [
+        String(date.getHours()).padStart(2, "0"),
+        String(date.getMinutes()).padStart(2, "0")
+      ].join(":");
+    }
+
+    function formatMonthTitle(date) {
+      return `${date.getFullYear()} 年 ${date.getMonth() + 1} 月`;
+    }
+
+    function displayMonthDate() {
+      const source = startAtInput.value || demoReservations[0]?.start || toLocalInputValue(new Date());
+      const date = new Date(source);
+      return new Date(date.getFullYear(), date.getMonth(), 1);
+    }
+
+    function approvedReservations() {
+      return loadRecords()
+        .filter((record) => record.status === "已通过")
+        .flatMap((record) => record.devices.map((device) => ({
+          deviceId: device.id,
+          borrower: record.borrower,
+          start: record.startAt,
+          end: record.endAt,
+          recordId: record.id
+        })));
+    }
+
+    function activeBorrowRecord(device) {
+      return loadRecords().find((record) => (
+        record.status === "已通过" && record.devices.some((item) => item.id === device.id)
+      )) || null;
+    }
+
+    function allReservations() {
+      return [...demoReservations, ...approvedReservations()];
+    }
+
+    function deviceReservations(deviceId) {
+      return allReservations()
+        .filter((item) => item.deviceId === deviceId)
+        .sort((a, b) => new Date(a.start) - new Date(b.start));
+    }
+
+    function requestedDurationMs() {
+      if (startAtInput.value && endAtInput.value && new Date(endAtInput.value) > new Date(startAtInput.value)) {
+        return new Date(endAtInput.value) - new Date(startAtInput.value);
+      }
+      return 8 * 60 * 60 * 1000;
+    }
+
+    function earliestAvailableStart(device, preferredStart = null) {
+      if (hasBaseUnavailableState(device)) return null;
+      const duration = requestedDurationMs();
+      let candidate = preferredStart ? new Date(preferredStart) : new Date(demoReservations[0]?.start || Date.now());
+      if (Number.isNaN(candidate.getTime())) candidate = new Date();
+      let changed = true;
+      while (changed) {
+        changed = false;
+        const candidateEnd = new Date(candidate.getTime() + duration);
+        const conflict = deviceReservations(device.id).find((item) => (
+          overlaps(candidate, candidateEnd, item.start, item.end)
+        ));
+        if (conflict) {
+          candidate = new Date(conflict.end);
+          changed = true;
+        }
+      }
+      return candidate;
+    }
+
+    function nextBorrowLabel(device) {
+      if (hasBaseUnavailableState(device)) return "预计可借：需管理员确认归还时间";
+      const activeBorrow = activeBorrowRecord(device);
+      if (activeBorrow) return `预计可借：等待 ${activeBorrow.borrower} 归还确认`;
+      const preferred = startAtInput.value ? new Date(startAtInput.value) : new Date(demoReservations[0]?.start || Date.now());
+      const next = earliestAvailableStart(device, preferred);
+      if (!next) return "预计可借：需管理员确认";
+      if (!startAtInput.value) {
+        return next > preferred
+          ? `最近可借：${formatDateTime(toLocalInputValue(next))} 起`
+          : "预计可借：未选时间，绿色日期可借";
+      }
+      if (next <= preferred) return "预计可借：所选时间可借";
+      return `预计可借：${formatDateTime(toLocalInputValue(next))} 起`;
+    }
+
+    function reservationConflict(device) {
+      const startAt = startAtInput.value;
+      const endAt = endAtInput.value;
+      if (!startAt || !endAt || new Date(endAt) <= new Date(startAt)) return null;
+      return deviceReservations(device.id).find((item) => (
+        item.deviceId === device.id && overlaps(startAt, endAt, item.start, item.end)
+      )) || null;
+    }
+
+    function availability(device) {
+      if (hasBaseUnavailableState(device)) {
+        return { ok: false, label: "使用中", reason: "当前不在库或已被借用" };
+      }
+      const activeBorrow = activeBorrowRecord(device);
+      if (activeBorrow) {
+        return {
+          ok: false,
+          label: "使用中",
+          reason: `${activeBorrow.borrower} 借用中，管理员确认归还后恢复在库`
+        };
+      }
+      const conflict = reservationConflict(device);
+      if (conflict) {
+        return {
+          ok: false,
+          label: "档期冲突",
+          reason: `${formatDateTime(conflict.start)} 至 ${formatDateTime(conflict.end)} 已占用`
+        };
+      }
+      return { ok: true, label: startAtInput.value && endAtInput.value ? "可借" : "需选时间", reason: "" };
+    }
+
+    function visibleDevices() {
+      const keyword = search.value.trim().toLowerCase();
+      const code = codeSearch.value.trim().toLowerCase();
+      return devices.filter((device) => {
+        const text = `${device.id} ${device.name} ${device.model} ${device.category} ${device.location} ${device.domain}`.toLowerCase();
+        return (!keyword || text.includes(keyword)) && (!code || String(device.id).toLowerCase().includes(code));
+      });
+    }
+
+    function renderDevicePicker() {
+      devices.forEach((device) => {
+        if (selectedDeviceIds.has(device.id) && !availability(device).ok) {
+          selectedDeviceIds.delete(device.id);
+        }
+      });
+
+      const groups = new Map(categoryOrder.map((name) => [name, []]));
+      visibleDevices().forEach((device) => {
+        const key = groups.has(device.domain) ? device.domain : "其他";
+        groups.get(key).push(device);
+      });
+
+      const hasSearch = Boolean(search.value.trim() || codeSearch.value.trim());
+      categoryList.innerHTML = categoryOrder
+        .filter((name) => groups.get(name).length)
+        .map((name) => {
+          const items = groups.get(name);
+          const availableCount = items.filter((device) => availability(device).ok).length;
+          const cards = items.map((device) => {
+            const state = availability(device);
+            const checked = selectedDeviceIds.has(device.id) ? "checked" : "";
+            const disabled = state.ok ? "" : "disabled";
+            const stateClass = state.ok ? "badge-ok" : "badge-busy";
+            const cardClass = state.ok ? "" : " unavailable";
+            const previewClass = previewDeviceId === device.id ? " is-previewed" : "";
+            return `
+              <label class="device-card${cardClass}${previewClass}" data-device-card data-device-id="${escapeHtml(device.id)}">
+                <input type="checkbox" name="devices" value="${escapeHtml(device.id)}" ${checked} ${disabled} />
+                <span>
+                  <span class="device-title">
+                    ${escapeHtml(device.name)}
+                    <span class="badge ${stateClass}">${escapeHtml(state.label)}</span>
+                  </span>
+                  <span class="device-meta">${escapeHtml(device.id)}｜${escapeHtml(device.model)}｜${escapeHtml(device.location)}</span>
+                  ${state.reason ? `<span class="device-meta">${escapeHtml(state.reason)}</span>` : ""}
+                  <span class="device-next">${escapeHtml(nextBorrowLabel(device))}</span>
+                </span>
+              </label>
+            `;
+          }).join("");
+          return `
+            <details class="category-group" ${hasSearch || selectedDeviceIds.size ? "open" : ""}>
+              <summary>
+                <span>${escapeHtml(name)}</span>
+                <span class="category-count">${availableCount}/${items.length} 可借</span>
+              </summary>
+              <div class="device-list">${cards}</div>
+            </details>
+          `;
+        }).join("") || `<p class="hint">没有匹配的设备，请换一个编号、名称或型号试试。</p>`;
+
+      updateSelectedSummary();
+      renderAvailabilityPreview();
+      renderAdminSummary();
+      renderMonthSchedule();
+    }
+
+    function selectedDeviceList() {
+      return [...selectedDeviceIds]
+        .map((id) => devices.find((device) => device.id === id))
+        .filter(Boolean);
+    }
+
+    function updateSelectedSummary() {
+      const selected = selectedDeviceList();
+      const availableTotal = devices.filter((device) => availability(device).ok).length;
+      assetCode.textContent = `${selected.length} 台`;
+      assetCategory.textContent = `${availableTotal} 台当前可借`;
+      assetLocation.textContent = startAtInput.value && endAtInput.value ? "已按所选时间校验" : "选择时间后校验档期";
+      selectedDevices.innerHTML = selected.length
+        ? selected.map((device) => `<span class="selected-chip">${escapeHtml(device.id)}｜${escapeHtml(device.name)}</span>`).join("")
+        : `<span class="hint">尚未选择仪器。</span>`;
+    }
+
+    function dayWindow(date) {
+      const start = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0);
+      const end = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1, 0, 0, 0);
+      return { start, end };
+    }
+
+    function dayState(device, date) {
+      if (date.getMonth() !== displayMonthDate().getMonth()) return { className: "", label: "" };
+      if (hasBaseUnavailableState(device)) return { className: "slot-unknown", label: "确认" };
+      const { start, end } = dayWindow(date);
+      const busy = deviceReservations(device.id).find((item) => overlaps(start, end, item.start, item.end));
+      if (busy) return { className: "slot-busy", label: "占用", detail: busy.borrower };
+      return { className: "slot", label: "可用" };
+    }
+
+    function monthDays(monthDate) {
+      const count = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+      return Array.from({ length: count }, (_, index) => new Date(monthDate.getFullYear(), monthDate.getMonth(), index + 1));
+    }
+
+    function renderAvailabilityPreview() {
+      const device = devices.find((item) => item.id === previewDeviceId);
+      if (!device) {
+        availabilityPanel.hidden = true;
+        return;
+      }
+
+      const month = displayMonthDate();
+      const days = monthDays(month);
+      const first = new Date(month.getFullYear(), month.getMonth(), 1);
+      const leading = (first.getDay() + 6) % 7;
+      const calendarCells = [
+        ...Array.from({ length: leading }, () => null),
+        ...days
+      ];
+      while (calendarCells.length % 7) calendarCells.push(null);
+
+      availabilityPanel.hidden = false;
+      availabilityTitle.textContent = `${device.name}（${device.id}）可用范围`;
+      availabilityMeta.textContent = `${formatMonthTitle(month)}｜${nextBorrowLabel(device)}`;
+      availabilityNote.textContent = hasBaseUnavailableState(device)
+        ? "该仪器位置显示为使用中或不在库，具体可借时间需要管理员确认归还状态。"
+        : "绿色日期表示该仪器当天没有已通过排期；若选择具体借用时间，系统会继续精确校验小时段。";
+      availabilityCalendarHead.innerHTML = `
+        <tr>
+          <th>周次</th>
+          <th>周一</th>
+          <th>周二</th>
+          <th>周三</th>
+          <th>周四</th>
+          <th>周五</th>
+          <th>周六</th>
+          <th>周日</th>
+        </tr>
+      `;
+      availabilityCalendarBody.innerHTML = Array.from({ length: calendarCells.length / 7 }, (_, weekIndex) => {
+        const cells = calendarCells.slice(weekIndex * 7, weekIndex * 7 + 7).map((date) => {
+          if (!date) return "<td></td>";
+          const state = dayState(device, date);
+          return `<td class="${state.className}"><span class="calendar-day">${date.getDate()}</span>${escapeHtml(state.label)}</td>`;
+        }).join("");
+        return `<tr><td>第 ${weekIndex + 1} 周</td>${cells}</tr>`;
+      }).join("");
+    }
+
+    function renderAdminSummary() {
+      const records = loadRecords();
+      const pending = records.filter((record) => record.status === "待审批").length;
+      const approved = records.filter((record) => record.status === "已通过");
+      const returned = records.filter((record) => record.status === "已归还").length;
+      const uniqueReserved = new Set(approved.flatMap((record) => record.devices.map((device) => device.id)));
+      const month = displayMonthDate();
+      const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
+      const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 1);
+
+      totalApplications.textContent = records.length;
+      pendingApplications.textContent = pending;
+      approvedApplications.textContent = approved.length;
+      returnedApplications.textContent = returned;
+      reservedDevices.textContent = uniqueReserved.size;
+      adminSummaryMeta.textContent = `${formatMonthTitle(month)} 汇总`;
+
+      adminSummaryBody.innerHTML = categoryOrder.map((name) => {
+        const groupDevices = devices.filter((device) => device.domain === name);
+        const freeCount = groupDevices.filter((device) => !hasBaseUnavailableState(device)).length;
+        const reservedInMonth = new Set(allReservations()
+          .filter((item) => groupDevices.some((device) => device.id === item.deviceId))
+          .filter((item) => overlaps(monthStart, monthEnd, item.start, item.end))
+          .map((item) => item.deviceId)).size;
+        return `
+          <tr>
+            <td>${escapeHtml(name)}</td>
+            <td>${groupDevices.length}</td>
+            <td>${freeCount}</td>
+            <td>${reservedInMonth}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderMonthSchedule() {
+      const month = displayMonthDate();
+      const days = monthDays(month);
+      monthScheduleTitle.textContent = `${formatMonthTitle(month)}设备可用表`;
+      monthScheduleHead.innerHTML = `
+        <tr>
+          <th>仪器</th>
+          ${days.map((date) => `<th>${date.getDate()}</th>`).join("")}
+        </tr>
+      `;
+      monthScheduleBody.innerHTML = devices
+        .slice()
+        .sort((a, b) => a.domain.localeCompare(b.domain, "zh-CN") || a.name.localeCompare(b.name, "zh-CN"))
+        .map((device) => {
+          const cells = days.map((date) => {
+            const state = dayState(device, date);
+            return `<td class="${state.className}" title="${escapeHtml(device.name)} ${date.getDate()}日 ${escapeHtml(state.label)}">${escapeHtml(state.label.slice(0, 1))}</td>`;
+          }).join("");
+          return `
+            <tr class="summary-row ${previewDeviceId === device.id ? "is-active" : ""}" data-device-row="${escapeHtml(device.id)}">
+              <td>${escapeHtml(device.name)}<br><span class="device-meta">${escapeHtml(device.id)}</span></td>
+              ${cells}
+            </tr>
+          `;
+        }).join("");
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "";
+      return value.replace("T", " ");
+    }
+
+    function loadRecords() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function saveRecords(records) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+    }
+
+    function makeRecordId() {
+      const now = new Date();
+      const stamp = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, "0"),
+        String(now.getDate()).padStart(2, "0"),
+        String(now.getHours()).padStart(2, "0"),
+        String(now.getMinutes()).padStart(2, "0"),
+        String(now.getSeconds()).padStart(2, "0")
+      ].join("");
+      return `APP-${stamp}`;
+    }
+
+    function statusClass(status) {
+      if (status === "已通过") return "status-approved";
+      if (status === "已驳回") return "status-rejected";
+      if (status === "已归还") return "status-returned";
+      return "";
+    }
+
+    function defaultReturnLocation(record) {
+      return record.devices
+        .map((device) => device.location)
+        .filter(Boolean)
+        .join("、") || "原存放位置";
+    }
+
+    function renderRecords() {
+      const records = loadRecords();
+      recordsMeta.textContent = records.length ? `共 ${records.length} 条申请记录` : "暂无申请记录";
+      emptyRecords.hidden = records.length > 0;
+      recordsTableWrap.hidden = records.length === 0;
+      recordsBody.innerHTML = records.map((record) => {
+        const deviceText = record.devices
+          .map((device) => `${escapeHtml(device.name)}（${escapeHtml(device.id)}）`)
+          .join("<br>");
+        return `
+          <tr>
+            <td>${escapeHtml(record.id)}<br><span class="device-meta">${escapeHtml(record.createdAt)}</span></td>
+            <td>${escapeHtml(record.borrower)}<br><span class="device-meta">${escapeHtml(record.contact)}</span></td>
+            <td>${deviceText}</td>
+            <td>${escapeHtml(record.place)}</td>
+            <td>${escapeHtml(formatDateTime(record.startAt))}<br>至 ${escapeHtml(formatDateTime(record.endAt))}</td>
+            <td>
+              <span class="status-pill ${statusClass(record.status)}">${escapeHtml(record.status)}</span>
+              ${record.reviewedAt ? `<br><span class="device-meta">${escapeHtml(record.reviewedAt)}</span>` : ""}
+              ${record.returnedAt ? `<br><span class="device-meta">归还：${escapeHtml(record.returnedAt)}</span>` : ""}
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderApprovals() {
+      const records = loadRecords();
+      const pendingCount = records.filter((record) => record.status === "待审批").length;
+      approvalMeta.textContent = records.length
+        ? `${pendingCount} 条待审批 / 共 ${records.length} 条申请`
+        : "暂无待审批申请";
+      emptyApprovals.hidden = records.length > 0;
+      approvalList.innerHTML = records.map((record) => {
+        const deviceText = record.devices
+          .map((device) => `${escapeHtml(device.name)}（${escapeHtml(device.id)}）`)
+          .join("、");
+        const reviewed = record.status !== "待审批";
+        const cardState = record.status === "已通过" ? " approved" : record.status === "已驳回" ? " rejected" : record.status === "已归还" ? " returned" : "";
+        return `
+          <article class="approval-card${cardState}">
+            <div class="approval-top">
+              <div>
+                <p class="approval-title">${escapeHtml(record.borrower)} 申请 ${record.devices.length} 台仪器</p>
+                <p class="approval-detail">${escapeHtml(record.id)}｜${deviceText}</p>
+                <p class="approval-detail">地点：${escapeHtml(record.place)}｜时间：${escapeHtml(formatDateTime(record.startAt))} 至 ${escapeHtml(formatDateTime(record.endAt))}</p>
+                <p class="approval-detail">用途：${escapeHtml(record.purpose)}</p>
+                ${record.approvalNote ? `<p class="approval-detail">审批备注：${escapeHtml(record.approvalNote)}</p>` : ""}
+                ${record.returnedAt ? `<p class="approval-detail">归还：${escapeHtml(record.returnedAt)}｜位置：${escapeHtml(record.returnLocation || defaultReturnLocation(record))}｜正常归还：${escapeHtml(record.returnNormal || "-")}｜设备状态：在库</p>` : ""}
+                ${record.returnNote ? `<p class="approval-detail">归还备注：${escapeHtml(record.returnNote)}</p>` : ""}
+                ${record.returnPhoto ? `<p class="approval-detail">归还照片：${escapeHtml(record.returnPhoto)}</p>` : ""}
+              </div>
+              <span class="status-pill ${statusClass(record.status)}">${escapeHtml(record.status)}</span>
+            </div>
+            ${record.status === "已通过" ? `
+              <p class="approval-detail">审批人：${escapeHtml(record.approver || "管理员")}｜审批时间：${escapeHtml(record.reviewedAt || "-")}｜设备状态：使用中</p>
+              <div class="return-actions" data-return-id="${escapeHtml(record.id)}">
+                <div class="full-row">
+                  <strong>归还登记</strong>
+                  <div class="hint">管理员确认后自动记录实际归还时间，申请状态变为已归还。</div>
+                </div>
+                <div>
+                  <label for="return-location-${escapeHtml(record.id)}">归还位置</label>
+                  <input id="return-location-${escapeHtml(record.id)}" data-return-location value="${escapeHtml(defaultReturnLocation(record))}" />
+                </div>
+                <div>
+                  <label>是否正常归还</label>
+                  <div class="radio-row">
+                    <label><input type="radio" name="return-normal-${escapeHtml(record.id)}" value="是" checked /> 是</label>
+                    <label><input type="radio" name="return-normal-${escapeHtml(record.id)}" value="否" /> 否</label>
+                  </div>
+                </div>
+                <div class="full-row">
+                  <label for="return-note-${escapeHtml(record.id)}">归还备注</label>
+                  <textarea id="return-note-${escapeHtml(record.id)}" data-return-note placeholder="可填写设备状态、缺件、清洁情况等"></textarea>
+                </div>
+                <div class="full-row">
+                  <label for="return-photo-${escapeHtml(record.id)}">归还照片</label>
+                  <input id="return-photo-${escapeHtml(record.id)}" type="file" disabled />
+                  <div class="hint">Demo 先预留照片入口，后续接入上传后再启用。</div>
+                </div>
+                <div class="full-row">
+                  <button class="primary mini-button" type="button" data-action="return">确认归还</button>
+                </div>
+              </div>
+            ` : reviewed ? `
+              <p class="approval-detail">审批人：${escapeHtml(record.approver || "管理员")}｜审批时间：${escapeHtml(record.reviewedAt || "-")}</p>
+            ` : `
+              <div class="approval-actions" data-record-id="${escapeHtml(record.id)}">
+                <div>
+                  <label for="note-${escapeHtml(record.id)}">审批备注</label>
+                  <input id="note-${escapeHtml(record.id)}" data-approval-note placeholder="如：同意借用，注意按时归还" />
+                </div>
+                <button class="primary mini-button" type="button" data-action="approve">同意</button>
+                <button class="danger mini-button" type="button" data-action="reject">驳回</button>
+              </div>
+            `}
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderSchedule() {
+      const rows = loadRecords()
+        .filter((record) => record.status === "已通过")
+        .flatMap((record) => record.devices.map((device) => ({
+          record,
+          device
+        })))
+        .sort((a, b) => new Date(a.record.startAt) - new Date(b.record.startAt));
+
+      scheduleMeta.textContent = rows.length ? `共 ${rows.length} 条设备排期` : "暂无已通过排期";
+      emptySchedule.hidden = rows.length > 0;
+      scheduleTableWrap.hidden = rows.length === 0;
+      scheduleBody.innerHTML = rows.map(({ record, device }) => `
+        <tr>
+          <td>${escapeHtml(device.name)}</td>
+          <td>${escapeHtml(device.id)}</td>
+          <td>${escapeHtml(record.borrower)}</td>
+          <td>${escapeHtml(record.place)}</td>
+          <td>${escapeHtml(formatDateTime(record.startAt))}<br>至 ${escapeHtml(formatDateTime(record.endAt))}</td>
+          <td>${escapeHtml(record.id)}</td>
+        </tr>
+      `).join("");
+    }
+
+    function refreshRecordViews() {
+      renderRecords();
+      renderApprovals();
+      renderSchedule();
+      renderAdminSummary();
+      renderMonthSchedule();
+      renderAvailabilityPreview();
+    }
+
+    function appendRecord(record) {
+      const records = loadRecords();
+      records.unshift(record);
+      saveRecords(records);
+      refreshRecordViews();
+    }
+
+    function reviewRecord(recordId, status, note) {
+      const records = loadRecords();
+      const record = records.find((item) => item.id === recordId);
+      if (!record) return;
+      record.status = status;
+      record.approvalNote = note || (status === "已通过" ? "同意借用" : "申请已驳回");
+      record.approver = "管理员";
+      record.reviewedAt = new Date().toLocaleString("zh-CN", { hour12: false });
+      saveRecords(records);
+      refreshRecordViews();
+      renderDevicePicker();
+    }
+
+    function returnRecord(recordId, details) {
+      const records = loadRecords();
+      const record = records.find((item) => item.id === recordId);
+      if (!record) return;
+      record.status = "已归还";
+      record.returnedAt = new Date().toLocaleString("zh-CN", { hour12: false });
+      record.returnLocation = details.location || defaultReturnLocation(record);
+      record.returnNormal = details.normal || "是";
+      record.returnNote = details.note || "";
+      record.returnPhoto = "Demo 预留，未上传";
+      record.returnApprover = "管理员";
+      saveRecords(records);
+      refreshRecordViews();
+      renderDevicePicker();
+    }
+
+    function applyHeadlineReveal() {
+      const headline = document.querySelector(".header-copy h1");
+      if (!headline || headline.dataset.revealed) return;
+      const text = headline.textContent.trim();
+      headline.setAttribute("aria-label", text);
+      headline.innerHTML = [...text].map((char, index) => (
+        `<span class="headline-char" style="--i:${index}" aria-hidden="true">${escapeHtml(char)}</span>`
+      )).join("");
+      headline.dataset.revealed = "true";
+    }
+
+    search.addEventListener("input", renderDevicePicker);
+    codeSearch.addEventListener("input", renderDevicePicker);
+    startAtInput.addEventListener("change", renderDevicePicker);
+    endAtInput.addEventListener("change", renderDevicePicker);
+
+    categoryList.addEventListener("change", (event) => {
+      const checkbox = event.target.closest('input[type="checkbox"][name="devices"]');
+      if (!checkbox) return;
+      previewDeviceId = checkbox.value;
+      if (checkbox.checked) {
+        selectedDeviceIds.add(checkbox.value);
+      } else {
+        selectedDeviceIds.delete(checkbox.value);
+      }
+      updateSelectedSummary();
+      renderAvailabilityPreview();
+      renderMonthSchedule();
+    });
+
+    categoryList.addEventListener("click", (event) => {
+      const card = event.target.closest("[data-device-card]");
+      if (!card) return;
+      previewDeviceId = card.dataset.deviceId;
+      renderAvailabilityPreview();
+      renderMonthSchedule();
+      categoryList.querySelectorAll("[data-device-card]").forEach((item) => {
+        item.classList.toggle("is-previewed", item.dataset.deviceId === previewDeviceId);
+      });
+    });
+
+    monthScheduleBody.addEventListener("click", (event) => {
+      const row = event.target.closest("[data-device-row]");
+      if (!row) return;
+      previewDeviceId = row.dataset.deviceRow;
+      renderDevicePicker();
+      renderAvailabilityPreview();
+      availabilityPanel.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+
+    form.addEventListener("reset", () => {
+      window.setTimeout(() => {
+        search.value = "";
+        codeSearch.value = "";
+        selectedDeviceIds.clear();
+        previewDeviceId = null;
+        renderDevicePicker();
+        result.style.display = "none";
+      }, 0);
+    });
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const startAt = data.get("startAt");
+      const endAt = data.get("endAt");
+
+      if (startAt && endAt && new Date(endAt) <= new Date(startAt)) {
+        alert("预计归还时间必须晚于借用开始时间。");
+        return;
+      }
+
+      const selected = selectedDeviceList();
+      if (!selected.length) {
+        alert("请至少选择一台可借仪器。");
+        return;
+      }
+
+      const blocked = selected.filter((device) => !availability(device).ok);
+      if (blocked.length) {
+        alert("所选仪器中有设备当前无可用档期，请重新选择。");
+        renderDevicePicker();
+        return;
+      }
+
+      const deviceLines = selected
+        .map((device) => `${escapeHtml(device.name)}（${escapeHtml(device.id)}，${escapeHtml(device.location)}）`)
+        .join("<br>");
+      const record = {
+        id: makeRecordId(),
+        borrower: String(data.get("borrower") || ""),
+        contact: String(data.get("contact") || ""),
+        group: String(data.get("group") || ""),
+        place: String(data.get("place") || ""),
+        purpose: String(data.get("purpose") || ""),
+        leaveLab: String(data.get("leaveLab") || ""),
+        startAt: String(startAt || ""),
+        endAt: String(endAt || ""),
+        status: "待审批",
+        createdAt: new Date().toLocaleString("zh-CN", { hour12: false }),
+        devices: selected.map((device) => ({
+          id: device.id,
+          name: device.name,
+          model: device.model,
+          location: device.location,
+          domain: device.domain
+        }))
+      };
+
+      summary.innerHTML = `
+        <p><strong>申请编号：</strong>${escapeHtml(record.id)}</p>
+        <p><strong>借用人：</strong>${data.get("borrower")}（${data.get("contact")}）</p>
+        <p><strong>借用设备：</strong><br>${deviceLines}</p>
+        <p><strong>使用地点：</strong>${data.get("place")}；<strong>带离实验室：</strong>${data.get("leaveLab")}</p>
+        <p><strong>使用时间：</strong>${formatDateTime(startAt)} 至 ${formatDateTime(endAt)}</p>
+        <p><strong>使用用途：</strong>${data.get("purpose")}</p>
+      `;
+      appendRecord(record);
+      result.style.display = "block";
+      result.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    clearRecords.addEventListener("click", () => {
+      if (!confirm("确认清空当前浏览器里的 Demo 申请记录吗？")) return;
+      saveRecords([]);
+      refreshRecordViews();
+      result.style.display = "none";
+    });
+
+    approvalList.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-action]");
+      if (!button) return;
+      if (button.dataset.action === "return") {
+        const actions = button.closest(".return-actions");
+        const normalInput = actions.querySelector('input[type="radio"]:checked');
+        returnRecord(actions.dataset.returnId, {
+          location: actions.querySelector("[data-return-location]").value.trim(),
+          normal: normalInput ? normalInput.value : "是",
+          note: actions.querySelector("[data-return-note]").value.trim()
+        });
+        return;
+      }
+      const actions = button.closest(".approval-actions");
+      const recordId = actions.dataset.recordId;
+      const note = actions.querySelector("[data-approval-note]").value.trim();
+      const status = button.dataset.action === "approve" ? "已通过" : "已驳回";
+      reviewRecord(recordId, status, note);
+    });
+
+    applyHeadlineReveal();
+    renderDevicePicker();
+    refreshRecordViews();
+  </script>
+</body>
+</html>

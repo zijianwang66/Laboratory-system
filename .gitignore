@@ -1,0 +1,25 @@
+# Generated previews, screenshots, temporary tools and local backups
+/tmp_render/
+/docx_render_check/
+/test-results/
+/playwright-report/
+
+# Third-party design reference, not used by the application
+/workbuddy-style-ref/
+
+# Local source documents and equipment spreadsheets
+*.xlsx
+*.xls
+*.docx
+~$*
+
+# Dependencies and local configuration
+node_modules/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.log
+.DS_Store
+Thumbs.db
